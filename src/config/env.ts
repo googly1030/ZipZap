@@ -1,3 +1,3 @@
 export const config = {
-  groqApiKey: import.meta.env.VITE_GROQ_API_KEY || ''
+  groqApiKey:'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'
 };
