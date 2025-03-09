@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import LandingPage from './components/LandingPage';
 import UserForm from './components/UserForm';
 import ChatInterface from './components/ChatInterface';
+import { useState } from 'react';
 
 function App() {
-  const [step, setStep] = useState<'form' | 'chat'>('form');
   const [userInfo, setUserInfo] = useState({
     name: '',
     email: '',
@@ -11,25 +12,30 @@ function App() {
     jobRole: ''
   });
 
-  const handleFormSubmit = (formData: typeof userInfo) => {
-    setUserInfo(formData);
-    setStep('chat');
-  };
-
   return (
-    <div className="min-h-screen w-full bg-[#202124]">
-      {step === 'form' ? (
-        <div className="p-4 sm:p-8 flex items-center justify-center">
-          <div className="w-full max-w-[500px]">
-            <UserForm onSubmit={handleFormSubmit} />
-          </div>
-        </div>
-      ) : (
-        <div className="w-full h-screen">
-          <ChatInterface userInfo={userInfo} />
-        </div>
-      )}
-    </div>
+    <Router>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route 
+          path="/get-started" 
+          element={
+            <UserForm 
+              onSubmit={(formData) => {
+                setUserInfo(formData);
+              }} 
+            />
+          } 
+        />
+        <Route 
+          path="/chat" 
+          element={
+            userInfo.name ? 
+              <ChatInterface userInfo={userInfo} /> : 
+              <Navigate to="/get-started" />
+          } 
+        />
+      </Routes>
+    </Router>
   );
 }
 

@@ -1,11 +1,19 @@
 import React from 'react';
 
-export const LoadingDots: React.FC = () => {
+const LoadingDots: React.FC = () => {
   return (
-    <div className="flex space-x-2 p-4">
-      <div className="w-2 h-2 bg-[#8AB4F8] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-      <div className="w-2 h-2 bg-[#8AB4F8] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-      <div className="w-2 h-2 bg-[#8AB4F8] rounded-full animate-bounce"></div>
+    <div className="flex items-center space-x-2">
+      {[...Array(3)].map((_, i) => (
+        <div
+          key={i}
+          className="w-2 h-2 rounded-full bg-gradient-to-r from-purple-400 to-pink-600 animate-pulse"
+          style={{
+            animationDelay: `${i * 200}ms`
+          }}
+        />
+      ))}
     </div>
   );
 };
+
+export default LoadingDots;
