@@ -12,10 +12,10 @@ interface UserFormProps {
 
 const UserForm: React.FC<UserFormProps> = ({ onSubmit }) => {
   const [formData, setFormData] = useState({
-    name: '12',
-    email: '123@1231',
-    company: '12313',
-    jobRole: '123'
+    name: '',
+    email: '',
+    company: '',
+    jobRole: ''
   });
 
   const handleSubmit = (e: React.FormEvent) => {
