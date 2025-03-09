@@ -12,10 +12,10 @@ interface UserFormProps {
 
 const UserForm: React.FC<UserFormProps> = ({ onSubmit }) => {
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    company: '',
-    jobRole: ''
+    name: '12',
+    email: '123@1231',
+    company: '12313',
+    jobRole: '123'
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -28,7 +28,7 @@ const UserForm: React.FC<UserFormProps> = ({ onSubmit }) => {
       <div className="w-full max-w-xl bg-[#202124] bg-opacity-80 rounded-lg border border-[#ffffff22] p-8 sm:p-10 shadow-xl">
         <div className="text-center mb-10">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-[#8AB4F8] to-[#F28B82] bg-clip-text text-transparent mb-3">
-            Welcome to PresentAI
+            Welcome to BudX 
           </h1>
           <p className="text-[#ffffff99]">Enter your details to get started</p>
         </div>
