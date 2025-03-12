@@ -38,3 +38,13 @@ interface Window {
   webkitSpeechRecognition: typeof SpeechRecognition;
   SpeechRecognition: typeof SpeechRecognition;
 }
+
+interface ErrorEvent extends Event {
+  error: string;
+  message: string;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: 'aborted' | 'audio-capture' | 'network' | 'not-allowed' | 'service-not-allowed' | 'bad-grammar' | 'language-not-supported';
+  message?: string;
+}

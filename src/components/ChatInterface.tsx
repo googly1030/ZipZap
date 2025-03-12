@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState,useRef } from "react";
 import {
   MessageSquare,
   Send,
@@ -11,7 +11,6 @@ import {
   Code,
   Share2,
   Mic,
-  MicOff,
   X,
   Clipboard,
 } from "lucide-react";
@@ -24,6 +23,8 @@ import AlertDialog from "./AlertDialog";
 import { Alert, Snackbar } from "@mui/material";
 import ImageProcessor from "./ImageProcessor";
 import LoadingDots from "./LoadingDots";
+import ScreenDataDisplay from "./ScreenShare/ScreenDataDisplay";
+import VoiceAssistant from './VoiceAssistant';
 
 interface ChatInterfaceProps {
   userInfo: {
@@ -152,145 +153,6 @@ const FormattedResponse: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
-// Update the ScreenDataDisplay component
-const ScreenDataDisplay: React.FC<{
-  data: {
-    window?: string;
-    contentType?: string;
-    resolution?: string;
-    frameRate?: string;
-    languages?: string[];
-    codeComplexity?: "Low" | "Medium" | "High";
-    potentialIssues?: number;
-    performanceScore?: number;
-    bestPractices?: { score: number; issues: number };
-    screenOverview?: {
-      text: string;
-      lineCount: number;
-      visibleRange: string;
-      timestamp: number;
-    };
-  };
-  isLive?: boolean;
-  onUseAsPrompt?: (text: string) => void;
-}> = ({ data, isLive, onUseAsPrompt }) => {
-  return (
-    <div className="w-full space-y-4">
-      {/* Status Overview */}
-      <div className="bg-[#202124] rounded-lg p-4 border border-[#ffffff1a] mt-3">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-white text-base font-medium">AI Code Analysis</h2>
-          <div className="flex items-center space-x-2">
-            <span
-              className={`flex h-2 w-2 rounded-full ${
-                isLive ? "bg-green-500 animate-pulse" : "bg-[#ffffff66]"
-              }`}
-            />
-            <span
-              className={`text-xs ${
-                isLive ? "text-green-400" : "text-[#ffffff66]"
-              }`}
-            >
-              {isLive ? "LIVE ANALYSIS" : "IDLE"}
-            </span>
-          </div>
-        </div>
-
-        {/* Screen Content Section */}
-        {data.screenOverview && (
-          <div className="bg-[#ffffff0a] backdrop-blur-sm rounded-lg p-4 border border-[#ffffff1a]">
-            <div className="text-xs text-[#ffffff99] mb-3 flex items-center justify-between">
-              <div className="flex items-center">
-                <span className="flex h-1.5 w-1.5 rounded-full bg-[#8AB4F8] mr-2" />
-                Screen Content
-              </div>
-              <span className="text-[#ffffff66]">
-                {data.screenOverview.visibleRange}
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {/* Content Stats */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-[#ffffff0a] rounded-lg p-2">
-                  <div className="text-xs text-[#ffffff99]">Lines</div>
-                  <div className="text-sm text-white">
-                    {data.screenOverview.lineCount}
-                  </div>
-                </div>
-                <div className="bg-[#ffffff0a] rounded-lg p-2">
-                  <div className="text-xs text-[#ffffff99]">Last Update</div>
-                  <div className="text-sm text-white">
-                    {new Date(
-                      data.screenOverview.timestamp
-                    ).toLocaleTimeString()}
-                  </div>
-                </div>
-              </div>
-
-              {/* Content Preview */}
-              {data.screenOverview.text && (
-                <div className="mt-2">
-                  <div className="text-xs text-[#ffffff99] mb-2 flex items-center justify-between">
-                    <div className="flex items-center">
-                      <Code className="h-3 w-3 mr-2" />
-                      Content Preview
-                    </div>
-                    <button
-                      onClick={() =>
-                        onUseAsPrompt?.(data.screenOverview?.text || "")
-                      }
-                      className="flex items-center space-x-1 px-2 py-1 rounded-md 
-                             bg-[#8AB4F8] text-[#202124] hover:bg-[#8AB4F8]/90 
-                             transition-colors"
-                    >
-                      <MessageSquare className="h-3 w-3" />
-                      <span className="text-xs font-medium">Use as Prompt</span>
-                    </button>
-                  </div>
-                  <div className="bg-[#202124] rounded-lg overflow-hidden">
-                    {/* Header */}
-                    <div className="px-4 py-2 bg-[#ffffff0a] border-b border-[#ffffff1a] flex items-center justify-between">
-                      <div className="text-xs text-[#ffffff99]">
-                        Source Code
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className="flex h-1.5 w-1.5 rounded-full bg-[#8AB4F8]" />
-                        <span className="text-xs text-[#ffffff99]">
-                          {new Date().toLocaleTimeString()}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Code Content */}
-                    <div
-                      className="p-3 font-mono text-xs leading-5 text-[#ffffffcc] 
-                                overflow-x-auto whitespace-pre-wrap max-h-[200px] 
-                                overflow-y-auto scrollbar-thin scrollbar-thumb-[#ffffff1a] 
-                                scrollbar-track-transparent border-l-2 border-[#8AB4F8]"
-                    >
-                      {data.screenOverview.text}
-                    </div>
-
-                    {/* Footer */}
-                    <div className="px-4 py-2 bg-[#ffffff0a] border-t border-[#ffffff1a] flex justify-between items-center">
-                      <div className="text-xs text-[#ffffff99]">
-                        Lines: {data.screenOverview.lineCount}
-                      </div>
-                      <div className="text-xs text-[#ffffff66]">
-                        {data.screenOverview.visibleRange}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
 
 const getWelcomeMessage = (featureId: string, userName: string) => {
   const greetings = ["Hey there", "Welcome", "Hi", "Hello", "Great to see you"];
@@ -345,6 +207,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
   const [pendingFeature, setPendingFeature] = useState<string | null>(null);
   const [showError, setShowError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [voiceAssistantActive, setVoiceAssistantActive] = useState(false);
+  const [currentVoiceMessage, setCurrentVoiceMessage] = useState('');
+  const [voiceConfig] = useState({
+    rate: 1,
+    pitch: 1,
+    voice: 0
+  });
   interface ScreenAnalysis {
     window: string;
     contentType: string;
@@ -363,6 +232,29 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
 
   const handleAnalysisComplete = (analysis: ScreenAnalysis) => {
     setScreenAnalysis(analysis);
+  };
+
+  const handleVoiceResponse = (message: Message) => {
+    if (voiceAssistantActive && message.type === 'bot') {
+      let textToSpeak = '';
+      
+      if (typeof message.content === 'string') {
+        textToSpeak = message.content;
+      } else {
+        textToSpeak = message.content.response;
+        
+        if (message.content.codeSnippets?.length) {
+          textToSpeak += ' I\'ve also provided some code snippets that might help.';
+        }
+        
+        if (message.content.suggestions?.length) {
+          textToSpeak += ' Here are some best practices to consider: ' + 
+            message.content.suggestions.join('. ');
+        }
+      }
+      
+      setCurrentVoiceMessage(textToSpeak);
+    }
   };
 
   const features = [
@@ -482,13 +374,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
 
           if (result) {
             const formattedEmail = `From: ${userInfo.name}
-Role: ${userInfo.jobRole}
-Company: ${userInfo.company}
-Email: ${userInfo.email}
+            Role: ${userInfo.jobRole}
+            Company: ${userInfo.company}
+            Email: ${userInfo.email}
 
-Subject: ${result.subject}
+            Subject: ${result.subject}
 
-${result.content}`;
+            ${result.content}`;
 
             setMessages((prev) => [
               ...prev,
@@ -610,6 +502,10 @@ ${result.content}`;
       }
 
       setMessages((prev) => prev.filter((msg) => msg.id !== loadingId));
+      const botMessage = messages.find(msg => msg.type === 'bot');
+      if (botMessage) {
+        handleVoiceResponse(botMessage);
+      }
     } catch (error) {
       console.error("API Error:", error);
       setMessages((prev) => [
@@ -821,34 +717,49 @@ ${result.content}`;
     setIsScreenSharing(false);
   };
 
-  const toggleVoiceInput = () => {
-    if (isListening) {
-      speechService.stopListening();
-      setIsListening(false);
-      // Submit the current input value
-      if (inputValue.trim()) {
-        const formEvent = new Event("submit", { cancelable: true });
-        handleSubmit(formEvent as unknown as React.FormEvent);
-      }
-      // Reset input field
-      setInputValue("");
-    } else {
-      speechService.startListening(
-        (text) => setInputValue(text),
-        () => {
-          setIsListening(false);
-          // Submit the final transcribed text
-          if (inputValue.trim()) {
-            const formEvent = new Event("submit", { cancelable: true });
-            handleSubmit(formEvent as unknown as React.FormEvent);
-          }
-          // Reset input field
-          setInputValue("");
-        }
-      );
-      setIsListening(true);
+const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+const submitButtonRef = useRef<HTMLButtonElement>(null);
+const toggleVoiceInput = () => {
+  if (isListening || voiceAssistantActive) {
+    speechService.stopListening();
+    setIsListening(false);
+    setVoiceAssistantActive(false);
+    if (messageTimeoutRef.current) {
+      clearTimeout(messageTimeoutRef.current);
+      messageTimeoutRef.current = null;
     }
-  };
+    setInputValue('');
+  } else {
+    setVoiceAssistantActive(false);
+    let currentInput = '';
+    const SUBMIT_DELAY = 3000;
+
+    speechService.startListening(
+      (text) => {
+        currentInput = text;
+        setInputValue(text);
+        
+        // Clear any existing timeout
+        if (messageTimeoutRef.current) {
+          clearTimeout(messageTimeoutRef.current);
+        }
+      },
+      () => {
+        // Set a single timeout for submission
+        if (currentInput.trim()) {
+          messageTimeoutRef.current = setTimeout(() => {
+            setIsListening(false);
+            const submitButton = document.querySelector('button[type="submit"]');
+            if (submitButton) {
+              (submitButton as HTMLButtonElement).click();
+            }
+          }, SUBMIT_DELAY);
+        }
+      }
+    );
+    setIsListening(true);
+  }
+};
 
   const handleAlertConfirm = () => {
     if (pendingFeature) {
@@ -1270,20 +1181,25 @@ ${result.content}`;
                         <button
                           type="button"
                           onClick={toggleVoiceInput}
-                          className={`p-2 rounded-full transition-colors ${
+                          className={`p-2 rounded-full transition-colors relative ${
                             isListening
-                              ? "text-red-500"
+                              ? "text-purple-500"
                               : "text-[#ffffff99] hover:text-[#8AB4F8]"
                           }`}
                         >
                           {isListening ? (
-                            <MicOff className="h-4 md:h-5 w-4 md:w-5" />
+                            <>
+                              <div className="absolute inset-0 rounded-full animate-pulse bg-purple-500/20"></div>
+                              <div className="absolute inset-0 rounded-full animate-ping bg-purple-500/20"></div>
+                              <Mic className="h-4 md:h-5 w-4 md:w-5 relative animate-pulse" />
+                            </>
                           ) : (
                             <Mic className="h-4 md:h-5 w-4 md:w-5" />
                           )}
                         </button>
                         <button
                           type="submit"
+                          ref={submitButtonRef}
                           className="text-gray-400 hover:text-purple-400 p-2 
                        rounded-full transition-colors duration-300"
                         >
@@ -1379,6 +1295,12 @@ ${result.content}`;
           {errorMessage}
         </Alert>
       </Snackbar>
+      <VoiceAssistant
+        isActive={voiceAssistantActive}
+        message={currentVoiceMessage}
+        onComplete={() => setCurrentVoiceMessage('')}
+        voiceConfig={voiceConfig}
+      />
     </div>
   );
 };
