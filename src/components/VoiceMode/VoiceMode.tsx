@@ -33,10 +33,17 @@ const VoiceMode: React.FC<VoiceModeProps> = ({ isActive, onSpeechResult, onRespo
   const speakFunctionRef = useRef<((text: string) => void) | null>(null);
 
   const stopListening = useCallback(() => {
+    // Stop recognition
     if (recognition) {
       recognition.stop();
       setIsListening(false);
     }
+  
+    // Immediately stop any ongoing speech synthesis
+    window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+    setIsThinking(false);
+    setFinalTranscript('');
   }, [recognition]);
 
   const startListening = useCallback(() => {
