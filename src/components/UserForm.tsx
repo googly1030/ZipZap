@@ -3,18 +3,20 @@ import { User, Building2, Briefcase, Mail, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Header from "./LandingHeader";
 
+interface UserData {
+  name: string;
+  email: string;
+  company: string;
+  jobRole: string;
+}
+
 interface UserFormProps {
-  onSubmit: (data: {
-    name: string;
-    email: string;
-    company: string;
-    jobRole: string;
-  }) => void;
+  onSubmit: (data: UserData) => void;
 }
 
 const UserForm: React.FC<UserFormProps> = ({ onSubmit }) => {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<UserData>({
     name: "",
     email: "",
     company: "",
@@ -23,8 +25,9 @@ const UserForm: React.FC<UserFormProps> = ({ onSubmit }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Save to localStorage
+    localStorage.setItem('userData', JSON.stringify(formData));
     onSubmit(formData);
-    // Navigate to chat page after form submission
     navigate("/chat");
   };
 

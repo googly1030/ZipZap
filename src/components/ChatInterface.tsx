@@ -1,4 +1,4 @@
-import React, { useState,useRef } from "react";
+import React, { useState, useRef,useCallback } from "react";
 import {
   MessageSquare,
   Send,
@@ -24,7 +24,11 @@ import { Alert, Snackbar } from "@mui/material";
 import ImageProcessor from "./ImageProcessor";
 import LoadingDots from "./LoadingDots";
 import ScreenDataDisplay from "./ScreenShare/ScreenDataDisplay";
-import VoiceAssistant from './VoiceAssistant';
+import VoiceAssistant from "./VoiceAssistant";
+import CodeAssistModeSelector, {
+  CodeAssistMode,
+} from "./CodeAssistModeSelector/CodeAssistModeSelector";
+import VoiceMode from './VoiceMode/VoiceMode';
 
 interface ChatInterfaceProps {
   userInfo: {
@@ -153,10 +157,8 @@ const FormattedResponse: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
-
 const getWelcomeMessage = (featureId: string, userName: string) => {
   const greetings = ["Hey there", "Welcome", "Hi", "Hello", "Great to see you"];
-
   const greeting = greetings[Math.floor(Math.random() * greetings.length)];
 
   const messages = {
@@ -170,20 +172,19 @@ const getWelcomeMessage = (featureId: string, userName: string) => {
       `Ready to make an impact, ${userName}? Let's design a presentation that will wow your audience. Just select your target audience to begin! 🎨`,
       `${greeting}! Together we'll craft a powerful presentation that tells your story, ${userName}. Choose your audience and let's begin! ✨`,
     ],
-    codeAssist: [
-      `${greeting} ${userName}! 🖥️ Share your screen to get real-time code analysis, or type any coding question you have. I can help with debugging, optimization, or building new features! 💡`,
-      `Welcome to your coding session, ${userName}! Hit the screen share icon to show me your code, or ask me anything about programming. Let's solve problems together! 🚀`,
-      `${greeting}! Ready to dive into some code, ${userName}? Share your screen for live analysis, or ask me about any programming concept, bug, or feature you're working on! 🔍`,
-      `Your personal code companion is here, ${userName}! Whether you want to share your screen for live assistance or have specific coding questions, I'm ready to help! 💻`,
-    ],
+    codeAssist: null, // Set to null to prevent welcome message
   };
+
+  // For code assist, return empty string to prevent message
+  if (featureId === "codeAssist") {
+    return "";
+  }
 
   const featureMessages =
     messages[featureId as keyof typeof messages] || messages.codeAssist;
-  const randomMessage =
-    featureMessages[Math.floor(Math.random() * featureMessages.length)];
-
-  return randomMessage;
+  return featureMessages
+    ? featureMessages[Math.floor(Math.random() * featureMessages.length)]
+    : "";
 };
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
@@ -194,7 +195,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
       id: "initial-message",
     },
   ]);
-  const [selectedFeature, setSelectedFeature] = useState<string | null>(null);
+  const [selectedFeature, setSelectedFeature] = useState<string | null>("codeAssist");
   const [selectedAudience, setSelectedAudience] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState("");
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
@@ -208,12 +209,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
   const [showError, setShowError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [voiceAssistantActive, setVoiceAssistantActive] = useState(false);
-  const [currentVoiceMessage, setCurrentVoiceMessage] = useState('');
+  const [currentVoiceMessage, setCurrentVoiceMessage] = useState("");
+  const [codeAssistMode, setCodeAssistMode] = useState<CodeAssistMode>("chat");
+  const [isVoiceModeActive, setIsVoiceModeActive] = useState(false);
   const [voiceConfig] = useState({
     rate: 1,
     pitch: 1,
-    voice: 0
+    voice: 0,
   });
+  const [hasStartedChat, setHasStartedChat] = useState(false);
   interface ScreenAnalysis {
     window: string;
     contentType: string;
@@ -235,24 +239,26 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
   };
 
   const handleVoiceResponse = (message: Message) => {
-    if (voiceAssistantActive && message.type === 'bot') {
-      let textToSpeak = '';
-      
-      if (typeof message.content === 'string') {
+    if (voiceAssistantActive && message.type === "bot") {
+      let textToSpeak = "";
+
+      if (typeof message.content === "string") {
         textToSpeak = message.content;
       } else {
         textToSpeak = message.content.response;
-        
+
         if (message.content.codeSnippets?.length) {
-          textToSpeak += ' I\'ve also provided some code snippets that might help.';
+          textToSpeak +=
+            " I've also provided some code snippets that might help.";
         }
-        
+
         if (message.content.suggestions?.length) {
-          textToSpeak += ' Here are some best practices to consider: ' + 
-            message.content.suggestions.join('. ');
+          textToSpeak +=
+            " Here are some best practices to consider: " +
+            message.content.suggestions.join(". ");
         }
       }
-      
+
       setCurrentVoiceMessage(textToSpeak);
     }
   };
@@ -289,14 +295,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
   const switchFeature = (featureId: string) => {
     setSelectedFeature(featureId);
     setSelectedAudience(null);
+    setHasStartedChat(false); 
+    setIsVoiceModeActive(false);
+    if (featureId !== "codeAssist") {
+      setMessages([
+        {
+          type: "bot",
+          content: getWelcomeMessage(featureId, userInfo.name),
+          id: `welcome-${Date.now()}`,
+        },
+      ]);
+    } else {
+      setMessages([]);
+    }
 
-    setMessages([
-      {
-        type: "bot",
-        content: getWelcomeMessage(featureId, userInfo.name),
-        id: `welcome-${Date.now()}`,
-      },
-    ]);
     setSelectedMessage(null);
     setIsModifying(false);
     setInputValue("");
@@ -320,6 +332,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
 
     // Reset input value
     setInputValue("");
+
+    // Set hasStartedChat to true when user sends first message
+    setHasStartedChat(true);
 
     try {
       const timestamp = Date.now();
@@ -502,7 +517,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
       }
 
       setMessages((prev) => prev.filter((msg) => msg.id !== loadingId));
-      const botMessage = messages.find(msg => msg.type === 'bot');
+      const botMessage = messages.find((msg) => msg.type === "bot");
       if (botMessage) {
         handleVoiceResponse(botMessage);
       }
@@ -717,49 +732,51 @@ ${result.content}`;
     setIsScreenSharing(false);
   };
 
-const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-const submitButtonRef = useRef<HTMLButtonElement>(null);
-const toggleVoiceInput = () => {
-  if (isListening || voiceAssistantActive) {
-    speechService.stopListening();
-    setIsListening(false);
-    setVoiceAssistantActive(false);
-    if (messageTimeoutRef.current) {
-      clearTimeout(messageTimeoutRef.current);
-      messageTimeoutRef.current = null;
-    }
-    setInputValue('');
-  } else {
-    setVoiceAssistantActive(false);
-    let currentInput = '';
-    const SUBMIT_DELAY = 3000;
-
-    speechService.startListening(
-      (text) => {
-        currentInput = text;
-        setInputValue(text);
-        
-        // Clear any existing timeout
-        if (messageTimeoutRef.current) {
-          clearTimeout(messageTimeoutRef.current);
-        }
-      },
-      () => {
-        // Set a single timeout for submission
-        if (currentInput.trim()) {
-          messageTimeoutRef.current = setTimeout(() => {
-            setIsListening(false);
-            const submitButton = document.querySelector('button[type="submit"]');
-            if (submitButton) {
-              (submitButton as HTMLButtonElement).click();
-            }
-          }, SUBMIT_DELAY);
-        }
+  const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
+  const toggleVoiceInput = () => {
+    if (isListening || voiceAssistantActive) {
+      speechService.stopListening();
+      setIsListening(false);
+      setVoiceAssistantActive(false);
+      if (messageTimeoutRef.current) {
+        clearTimeout(messageTimeoutRef.current);
+        messageTimeoutRef.current = null;
       }
-    );
-    setIsListening(true);
-  }
-};
+      setInputValue("");
+    } else {
+      setVoiceAssistantActive(false);
+      let currentInput = "";
+      const SUBMIT_DELAY = 3000;
+
+      speechService.startListening(
+        (text) => {
+          currentInput = text;
+          setInputValue(text);
+
+          // Clear any existing timeout
+          if (messageTimeoutRef.current) {
+            clearTimeout(messageTimeoutRef.current);
+          }
+        },
+        () => {
+          // Set a single timeout for submission
+          if (currentInput.trim()) {
+            messageTimeoutRef.current = setTimeout(() => {
+              setIsListening(false);
+              const submitButton = document.querySelector(
+                'button[type="submit"]'
+              );
+              if (submitButton) {
+                (submitButton as HTMLButtonElement).click();
+              }
+            }, SUBMIT_DELAY);
+          }
+        }
+      );
+      setIsListening(true);
+    }
+  };
 
   const handleAlertConfirm = () => {
     if (pendingFeature) {
@@ -834,6 +851,12 @@ const toggleVoiceInput = () => {
       }
     }, 0);
   };
+
+  const handleVoiceModeStart = useCallback(() => {
+    setIsVoiceModeActive(true);
+  }, []);
+  
+
 
   // Update the main container layout
   return (
@@ -936,162 +959,181 @@ const toggleVoiceInput = () => {
 
             {/* Chat Area */}
             <div className="flex-1 flex flex-col min-w-0 z-10">
-              {/* Messages */}
-              <div
-                className={`p-3 md:p-6 overflow-y-auto flex-1 space-y-4 ${styles.chatScroll}`}
-              >
-                {messages.map((message) => (
-                  <div key={message.id} className="flex flex-col max-w-full">
-                    <div
-                      className={`flex ${
-                        message.type === "user"
-                          ? "justify-end"
-                          : "justify-start"
-                      }`}
-                    >
+              {selectedFeature === "codeAssist" && !hasStartedChat ? (
+                // Show CodeAssistModeSelector only when codeAssist is selected and chat hasn't started
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="max-w-[900px] w-full mx-auto px-4">
+                  <CodeAssistModeSelector
+                      currentMode={codeAssistMode}
+                      onModeSelect={(mode) => {
+                        setCodeAssistMode(mode);
+                        if (mode === 'voice') {
+                          handleVoiceModeStart();
+                        } else if (isScreenSharing && mode !== "screen") {
+                          stopScreenShare();
+                        }
+                      }}
+                      startScreenShare={startScreenShare}
+                    />
+                  </div>
+                </div>
+              ) : (
+                // Show messages for all features or when chat has started
+                <div
+                  className={`p-3 md:p-6 overflow-y-auto flex-1 space-y-4 ${styles.chatScroll}`}
+                >
+                  {messages.map((message) => (
+                    <div key={message.id} className="flex flex-col max-w-full">
                       <div
-                        className={`max-w-[95%] md:max-w-[85%] lg:max-w-[80%] rounded-2xl 
+                        className={`flex ${
+                          message.type === "user"
+                            ? "justify-end"
+                            : "justify-start"
+                        }`}
+                      >
+                        <div
+                          className={`max-w-[95%] md:max-w-[85%] lg:max-w-[80%] rounded-2xl 
                                   px-4 md:px-6 py-3 md:py-4 shadow-lg ${
                                     message.type === "user"
                                       ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white"
                                       : "backdrop-blur-lg bg-white/5 border border-purple-900/30 text-white"
                                   }`}
-                      >
-                        {message.content === "loading" ? (
-                          <LoadingDots />
-                        ) : typeof message.content === "string" ? (
-                          <pre className="whitespace-pre-line">
-                            {message.content}
-                          </pre>
-                        ) : (
-                          <div className="space-y-6">
-                            {/* Main Response */}
-                            <div
-                              className="bg-gradient-to-br from-purple-900/20 to-pink-900/20 
+                        >
+                          {message.content === "loading" ? (
+                            <LoadingDots />
+                          ) : typeof message.content === "string" ? (
+                            <pre className="whitespace-pre-line">
+                              {message.content}
+                            </pre>
+                          ) : (
+                            <div className="space-y-6">
+                              {/* Main Response */}
+                              <div
+                                className="bg-gradient-to-br from-purple-900/20 to-pink-900/20 
                                             backdrop-blur-sm rounded-lg p-4 
                                             border border-purple-900/30 
                                             shadow-[0_0_15px_rgba(147,51,234,0.1)]"
-                            >
-                              <FormattedResponse
-                                content={message.content.response}
-                              />
-                            </div>
+                              >
+                                <FormattedResponse
+                                  content={message.content.response}
+                                />
+                              </div>
 
-                            {/* Code Snippets */}
-                            {message.content.codeSnippets?.map(
-                              (snippet, index) => (
-                                <div
-                                  key={index}
-                                  className="rounded-lg overflow-hidden bg-[#2A2B2D]"
-                                >
-                                  <div className="px-4 py-2 bg-[#202124] border-b border-[#ffffff0f] flex justify-between items-center">
-                                    <h3 className="text-sm font-medium text-white">
-                                      {snippet.title}
-                                    </h3>
-                                    <div className="text-xs text-[#ffffff66]">
-                                      {snippet.language}
+                              {/* Code Snippets */}
+                              {message.content.codeSnippets?.map(
+                                (snippet, index) => (
+                                  <div
+                                    key={index}
+                                    className="rounded-lg overflow-hidden bg-[#2A2B2D]"
+                                  >
+                                    <div className="px-4 py-2 bg-[#202124] border-b border-[#ffffff0f] flex justify-between items-center">
+                                      <h3 className="text-sm font-medium text-white">
+                                        {snippet.title}
+                                      </h3>
+                                      <div className="text-xs text-[#ffffff66]">
+                                        {snippet.language}
+                                      </div>
+                                    </div>
+                                    <div className="p-4">
+                                      <CodeBlock
+                                        code={snippet.code}
+                                        language={snippet.language}
+                                      />
+                                      {snippet.explanation && (
+                                        <p className="mt-4 text-sm text-[#ffffff99]">
+                                          {snippet.explanation}
+                                        </p>
+                                      )}
                                     </div>
                                   </div>
-                                  <div className="p-4">
-                                    <CodeBlock
-                                      code={snippet.code}
-                                      language={snippet.language}
-                                    />
-                                    {snippet.explanation && (
-                                      <p className="mt-4 text-sm text-[#ffffff99]">
-                                        {snippet.explanation}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              )
-                            )}
+                                )
+                              )}
 
-                            {/* Suggestions */}
-                            {message.content.suggestions &&
-                              message.content.suggestions.length > 0 && (
-                                <div className="rounded-lg bg-[#2A2B2D]/50 p-4">
+                              {/* Suggestions */}
+                              {message.content.suggestions &&
+                                message.content.suggestions.length > 0 && (
+                                  <div className="rounded-lg bg-[#2A2B2D]/50 p-4">
+                                    <h3 className="text-sm font-medium text-white mb-2">
+                                      Best Practices
+                                    </h3>
+                                    <ul className="list-disc list-inside space-y-1">
+                                      {message.content.suggestions.map(
+                                        (suggestion, index) => (
+                                          <li
+                                            key={index}
+                                            className="text-sm text-[#ffffff99]"
+                                          >
+                                            {suggestion}
+                                          </li>
+                                        )
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
+
+                              {/* References */}
+                              {(message.content.references ?? []).length > 0 && (
+                                <div className="mt-4 border-t border-[#ffffff0f] pt-4">
                                   <h3 className="text-sm font-medium text-white mb-2">
-                                    Best Practices
+                                    Additional Resources
                                   </h3>
-                                  <ul className="list-disc list-inside space-y-1">
-                                    {message.content.suggestions.map(
-                                      (suggestion, index) => (
-                                        <li
-                                          key={index}
-                                          className="text-sm text-[#ffffff99]"
-                                        >
-                                          {suggestion}
+                                  <ul className="space-y-1">
+                                    {message.content.references?.map(
+                                      (ref, index) => (
+                                        <li key={index}>
+                                          <a
+                                            href={ref}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-sm text-[#8AB4F8] hover:underline"
+                                          >
+                                            {ref}
+                                          </a>
                                         </li>
                                       )
                                     )}
                                   </ul>
                                 </div>
                               )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
 
-                            {/* References */}
-                            {(message.content.references ?? []).length > 0 && (
-                              <div className="mt-4 border-t border-[#ffffff0f] pt-4">
-                                <h3 className="text-sm font-medium text-white mb-2">
-                                  Additional Resources
-                                </h3>
-                                <ul className="space-y-1">
-                                  {message.content.references?.map(
-                                    (ref, index) => (
-                                      <li key={index}>
-                                        <a
-                                          href={ref}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-sm text-[#8AB4F8] hover:underline"
-                                        >
-                                          {ref}
-                                        </a>
-                                      </li>
-                                    )
-                                  )}
-                                </ul>
-                              </div>
+                      {/* Modification buttons for email and presentation */}
+                      {message.type === "bot" &&
+                        typeof message.content === "string" && (
+                          <div className="flex justify-start mt-2">
+                            {isEmailContent(message.content) && (
+                              <button
+                                onClick={() => {
+                                  setSelectedMessage(message);
+                                  setIsModifying(true);
+                                  setSelectedFeature("email");
+                                }}
+                                className="text-sm text-[#8AB4F8] hover:text-white transition-colors"
+                              >
+                                Modify Email
+                              </button>
+                            )}
+                            {isPresentationContent(message.content) && (
+                              <button
+                                onClick={() => {
+                                  setSelectedMessage(message);
+                                  setIsModifying(true);
+                                  setSelectedFeature("presentation");
+                                }}
+                                className="text-sm text-[#8AB4F8] hover:text-white transition-colors ml-2"
+                              >
+                                Modify Presentation
+                              </button>
                             )}
                           </div>
                         )}
-                      </div>
                     </div>
-
-                    {/* Modification buttons for email and presentation */}
-                    {message.type === "bot" &&
-                      typeof message.content === "string" && (
-                        <div className="flex justify-start mt-2">
-                          {isEmailContent(message.content) && (
-                            <button
-                              onClick={() => {
-                                setSelectedMessage(message);
-                                setIsModifying(true);
-                                setSelectedFeature("email");
-                              }}
-                              className="text-sm text-[#8AB4F8] hover:text-white transition-colors"
-                            >
-                              Modify Email
-                            </button>
-                          )}
-                          {isPresentationContent(message.content) && (
-                            <button
-                              onClick={() => {
-                                setSelectedMessage(message);
-                                setIsModifying(true);
-                                setSelectedFeature("presentation");
-                              }}
-                              className="text-sm text-[#8AB4F8] hover:text-white transition-colors ml-2"
-                            >
-                              Modify Presentation
-                            </button>
-                          )}
-                        </div>
-                      )}
-                  </div>
-                ))}
-              </div>
-
+                  ))}
+                </div>
+              )}
               {/* Input Area */}
               <div className="border-t border-purple-900/30 bg-black/20 backdrop-blur-lg">
                 <div className="max-w-[900px] w-full p-4">
@@ -1161,23 +1203,19 @@ const toggleVoiceInput = () => {
                                 pr-[144px] md:pr-[156px]"
                       />
                       <div className="absolute right-2 flex items-center space-x-1 md:space-x-2">
-                        {selectedFeature === "codeAssist" && (
-                          <button
-                            type="button"
-                            onClick={
-                              isScreenSharing
-                                ? stopScreenShare
-                                : startScreenShare
-                            }
-                            className={`p-2 rounded-full transition-colors ${
-                              isScreenSharing
-                                ? "text-red-500 hover:text-red-400"
-                                : "text-[#ffffff99] hover:text-[#8AB4F8]"
-                            }`}
-                          >
-                            <Share2 className="h-4 md:h-5 w-4 md:w-5" />
-                          </button>
-                        )}
+                      {selectedFeature === "codeAssist" && codeAssistMode === "screen" && (
+                            <button
+                              type="button"
+                              onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+                              className={`p-2 rounded-full transition-colors ${
+                                isScreenSharing
+                                  ? "text-red-500 hover:text-red-400"
+                                  : "text-[#ffffff99] hover:text-[#8AB4F8]"
+                              }`}
+                            >
+                              <Share2 className="h-4 md:h-5 w-4 md:w-5" />
+                            </button>
+                          )}
                         <button
                           type="button"
                           onClick={toggleVoiceInput}
@@ -1268,6 +1306,30 @@ const toggleVoiceInput = () => {
               />
             </div>
           )}
+          {codeAssistMode === 'voice' && (
+            <VoiceMode
+              isActive={isVoiceModeActive}
+              onSpeechResult={(text) => {
+                if (text.trim()) {
+                  // Append new message instead of replacing
+                  setMessages(prev => [...prev, {
+                    type: 'user',
+                    content: text,
+                    id: `speech-${Date.now()}` // Unique ID for each message
+                  }]);
+                  setHasStartedChat(true);
+                }
+              }}
+              onResponse={(response) => {
+                // Append new bot message instead of replacing
+                setMessages(prev => [...prev, {
+                  type: 'bot',
+                  content: response,
+                  id: `ai-response-${Date.now()}` // Unique ID for each response
+                }]);
+              }}
+            />
+          )}
         </div>
       </main>
       <AlertDialog
@@ -1298,7 +1360,7 @@ const toggleVoiceInput = () => {
       <VoiceAssistant
         isActive={voiceAssistantActive}
         message={currentVoiceMessage}
-        onComplete={() => setCurrentVoiceMessage('')}
+        onComplete={() => setCurrentVoiceMessage("")}
         voiceConfig={voiceConfig}
       />
     </div>
