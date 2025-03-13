@@ -1,8 +1,9 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import LandingPage from './components/LandingPage';
 import UserForm from './components/UserForm';
 import ChatInterface from './components/ChatInterface';
-import { useState } from 'react';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   const [userInfo, setUserInfo] = useState({
@@ -12,6 +13,19 @@ function App() {
     jobRole: ''
   });
 
+  // Check for existing user data on mount
+  useEffect(() => {
+    const savedUserData = localStorage.getItem('userData');
+    if (savedUserData) {
+      setUserInfo(JSON.parse(savedUserData));
+    }
+  }, []);
+
+  const handleUserSubmit = (formData: typeof userInfo) => {
+    setUserInfo(formData);
+    localStorage.setItem('userData', JSON.stringify(formData));
+  };
+
   return (
     <Router>
       <Routes>
@@ -19,19 +33,17 @@ function App() {
         <Route 
           path="/get-started" 
           element={
-            <UserForm 
-              onSubmit={(formData) => {
-                setUserInfo(formData);
-              }} 
-            />
+            userInfo.name ? 
+              <Navigate to="/chat" replace /> : 
+              <UserForm onSubmit={handleUserSubmit} />
           } 
         />
         <Route 
           path="/chat" 
           element={
-            userInfo.name ? 
-              <ChatInterface userInfo={userInfo} /> : 
-              <Navigate to="/get-started" />
+            <ProtectedRoute isAuthenticated={Boolean(userInfo.name)}>
+              <ChatInterface userInfo={userInfo} />
+            </ProtectedRoute>
           } 
         />
       </Routes>

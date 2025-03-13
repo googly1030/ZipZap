@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { User, Building2, Briefcase, Mail, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Header from "./LandingHeader";
@@ -16,6 +16,16 @@ interface UserFormProps {
 
 const UserForm: React.FC<UserFormProps> = ({ onSubmit }) => {
   const navigate = useNavigate();
+
+  // Add session check on mount
+  useEffect(() => {
+    const userData = localStorage.getItem('userData');
+    if (userData) {
+      onSubmit(JSON.parse(userData));
+      navigate("/chat");
+    }
+  }, [navigate, onSubmit]);
+
   const [formData, setFormData] = useState<UserData>({
     name: "",
     email: "",

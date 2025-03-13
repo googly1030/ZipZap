@@ -20,16 +20,30 @@ export default function Header({ isFormCompleted = false }: HeaderProps) {
     }
   };
 
-  const handleAuthAction = () => {
+  const handleAuthAction = async () => {
     if (isLandingPage) {
       navigate("/get-started");
     } else {
-      // Clear user data from localStorage
-      localStorage.removeItem('userData');
-      // Clear any session storage if needed
-      sessionStorage.clear();
-      // Navigate to landing page
-      navigate("/");
+      try {
+        // Clear storages first
+        await Promise.all([
+          Promise.resolve(localStorage.removeItem('userData')),
+          Promise.resolve(sessionStorage.clear())
+        ]);
+        
+        // Force a small delay to ensure storage is cleared
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Then navigate
+        navigate("/get-started", { replace: true });
+        
+        // Force reload to clear any cached state
+        window.location.reload();
+      } catch (error) {
+        console.error('Error during sign off:', error);
+        // Fallback direct navigation
+        window.location.href = '/get-started';
+      }
     }
   };
 
