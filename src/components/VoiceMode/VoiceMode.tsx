@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Mic, MicOff, Volume2, Brain } from 'lucide-react';
+import { Mic, Volume2, Brain } from 'lucide-react';
 import { generateGeminiResponse } from '../../utils/geminiApi';
 
 interface VoiceModeProps {
@@ -212,19 +212,23 @@ const VoiceMode: React.FC<VoiceModeProps> = ({ isActive, onSpeechResult, onRespo
   }, []);
 
   return (
-    <div className="fixed bottom-[9rem] right-[4rem] flex items-center space-x-4">
-      <button
+    <div className="fixed bottom-[2.5rem] right-[4rem] flex items-center space-x-4">
+          <button
         onClick={isListening ? stopListening : startListening}
         disabled={!isActive || isThinking}
-        className={`p-4 rounded-full transition-all duration-300 ${
+        className={`p-4 rounded-full transition-all duration-300 relative ${
           !isActive || isThinking ? 'opacity-50 cursor-not-allowed' :
           isListening 
-            ? 'bg-red-500 hover:bg-red-600' 
+            ? 'bg-transparent' 
             : 'bg-purple-600 hover:bg-purple-700'
         }`}
       >
         {isListening ? (
-          <MicOff className="h-6 w-6 text-white" />
+          <>
+            <div className="absolute inset-0 rounded-full animate-pulse bg-purple-500/20"></div>
+            <div className="absolute inset-0 rounded-full animate-ping bg-purple-500/20"></div>
+            <div className="h-6 w-6 rounded-full bg-purple-500 relative"></div>
+          </>
         ) : (
           <Mic className="h-6 w-6 text-white" />
         )}
