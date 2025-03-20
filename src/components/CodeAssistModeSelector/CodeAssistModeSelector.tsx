@@ -20,20 +20,20 @@ const CodeAssistModeSelector: React.FC<CodeAssistModeSelectorProps> = ({
     {
       id: 'voice' as CodeAssistMode,
       icon: Mic,
-      label: 'Talk to BudX',
-      description: 'Have a natural conversation with BudX using voice commands'
+      label: 'Talk to Budy-X',
+      description: 'Have a natural conversation with Budy-X using voice commands'
     },
     {
       id: 'chat' as CodeAssistMode,
       icon: MessageSquare,
-      label: 'Show BudX',
+      label: 'Show Budy-X',
       description: 'Type your questions and get instant code assistance'
     },
     {
       id: 'screen' as CodeAssistMode,
       icon: Share2,
       label: 'Share your screen',
-      description: 'Share your screen to show BudX what you\'re working on'
+      description: 'Share your screen to show Budy-X what you\'re working on'
     }
   ];
   const handleModeSelect = (mode: CodeAssistMode) => {
@@ -49,10 +49,10 @@ const CodeAssistModeSelector: React.FC<CodeAssistModeSelectorProps> = ({
     <div className="p-6">
       <div className='text-center mb-6'>
       <h1 className="text-6xl font-semibold text-white mb-4">
-        Talk with BudX 
+        Talk with Budy-X 
       </h1>
       <p className="text-gray-400 mb-6">
-        Interact with BudX using text, voice,<br/>video, or screen sharing.
+        Interact with Budy-X using text, voice,<br/>video, or screen sharing.
       </p>
       </div>
 

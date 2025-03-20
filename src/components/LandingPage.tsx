@@ -74,7 +74,7 @@ function App() {
             </div>
           </div>
           <h1 className="text-6xl md:text-8xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-purple-600 animate-gradient pb-2">
-            BudX AI Assistant
+            Budy-X AI Assistant
           </h1>
           <p className="text-xl md:text-2xl mb-8 text-gray-300 max-w-3xl mx-auto">
             Revolutionize your workflow with AI-powered assistance for emails, presentations, and code development
@@ -198,7 +198,7 @@ function App() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
               {
-                quote: "BudX has transformed how I handle my daily communications. The email assistant is incredibly intuitive.",
+                quote: "Budy-X has transformed how I handle my daily communications. The email assistant is incredibly intuitive.",
                 author: "Sarah Johnson",
                 role: "Product Manager"
               },
@@ -235,7 +235,7 @@ function App() {
         <div className="max-w-4xl mx-auto text-center backdrop-blur-lg bg-gradient-to-b from-white/10 to-white/5 rounded-3xl p-12 border border-purple-900/30">
           <h2 className="text-4xl font-bold mb-6">Ready to Transform Your Workflow?</h2>
           <p className="text-xl text-gray-300 mb-8">
-            Join thousands of professionals using BudX AI Assistant to enhance their productivity.
+            Join thousands of professionals using Budy-X AI Assistant to enhance their productivity.
           </p>
           <div className="flex flex-col md:flex-row gap-4 justify-center">
             <button 

@@ -58,7 +58,7 @@ export default function Header({ isFormCompleted = false }: HeaderProps) {
           >
             <Brain className="w-8 h-8 text-purple-400" />
             <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">
-              BudX
+              Budy-X
             </span>
           </div>
 

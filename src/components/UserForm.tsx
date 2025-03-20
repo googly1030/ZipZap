@@ -48,7 +48,7 @@ const UserForm: React.FC<UserFormProps> = ({ onSubmit }) => {
         <div className="w-full max-w-xl backdrop-blur-lg bg-gradient-to-b from-white/10 to-white/5 rounded-2xl p-8 sm:p-10 border border-purple-900/30">
           <div className="text-center mb-10">
             <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-purple-600 mb-3">
-              Welcome to BudX
+              Welcome to Budy-X
             </h1>
             <p className="text-gray-300">Enter your details to get started</p>
           </div>

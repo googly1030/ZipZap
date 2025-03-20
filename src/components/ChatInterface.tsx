@@ -893,7 +893,7 @@ ${result.content}`;
                     className="text-4xl font-bold bg-clip-text text-transparent 
                              bg-gradient-to-r from-purple-400 via-pink-500 to-purple-600"
                   >
-                    BudX
+                    Budy-X
                   </h1>
                   <p className="text-gray-300 mt-2">Smarter Than Your Ex 💀</p>
                 </div>
@@ -1180,7 +1180,7 @@ ${result.content}`;
                         placeholder={
                           isModifying
                             ? "Enter modification instructions..."
-                            : "Message BudX ... (Shift+Enter for new line)"
+                            : "Message Budy-X ... (Shift+Enter for new line)"
                         }
                         style={{
                           height: "auto",

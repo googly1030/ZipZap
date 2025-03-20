@@ -23,6 +23,7 @@ interface ScreenAnalysis {
     lineCount: number;
     visibleRange: string;
     timestamp: number;
+    lastUpdate?: string;
   };
 }
 
@@ -31,6 +32,8 @@ const ImageProcessor: React.FC<ImageProcessorProps> = ({ mediaStream, onAnalysis
   const videoRef = useRef<HTMLVideoElement>(null);
   const processingRef = useRef(false);
   const [modelError, setModelError] = useState(false);
+  const lastProcessedTime = useRef<number>(0);
+  const PROCESS_INTERVAL = 60000; // 1 minute in milliseconds
 
   // Update model loading with error handling
   const codeModel = useMemo(() => {
@@ -53,6 +56,12 @@ const ImageProcessor: React.FC<ImageProcessorProps> = ({ mediaStream, onAnalysis
 
   // Update processFrame to handle missing model
   const processFrame = useCallback(async () => {
+    // Check if enough time has passed since last processing
+    const currentTime = Date.now();
+    if (currentTime - lastProcessedTime.current < PROCESS_INTERVAL) {
+      return;
+    }
+
     if (!videoRef.current || !canvasRef.current || processingRef.current) return;
 
     processingRef.current = true;
@@ -67,6 +76,9 @@ const ImageProcessor: React.FC<ImageProcessorProps> = ({ mediaStream, onAnalysis
       processingRef.current = false;
       return;
     }
+
+    // Update last processed time
+    lastProcessedTime.current = currentTime;
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -141,7 +153,7 @@ const ImageProcessor: React.FC<ImageProcessorProps> = ({ mediaStream, onAnalysis
         window: 'VS Code',
         contentType: 'Code Editor',
         resolution: `${canvas.width}x${canvas.height}`,
-        frameRate: '30',
+        frameRate: '60',
         languages: [],
         codeComplexity: 'Low',
         potentialIssues: 0,
@@ -171,8 +183,7 @@ const ImageProcessor: React.FC<ImageProcessorProps> = ({ mediaStream, onAnalysis
         video.srcObject = mediaStream;
         await video.play();
         isPlayingVideo = true;
-        // Small delay to ensure video is stable
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Process first frame immediately
         processFrame();
       } catch (error) {
         console.warn('Video setup error:', error);
@@ -182,11 +193,12 @@ const ImageProcessor: React.FC<ImageProcessorProps> = ({ mediaStream, onAnalysis
 
     setupVideo();
     
+    // Set interval to match the desired update frequency
     const intervalId = setInterval(() => {
       if (isPlayingVideo) {
         processFrame();
       }
-    }, 500);
+    }, PROCESS_INTERVAL);
 
     return () => {
       clearInterval(intervalId);
@@ -294,7 +306,8 @@ const extractScreenOverview = (text: string) => {
     text: visibleText,
     lineCount,
     visibleRange: `Lines 1-${Math.min(15, lineCount)}`,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    lastUpdate: new Date().toISOString()
   };
 };
 

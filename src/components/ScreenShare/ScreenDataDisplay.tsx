@@ -1,5 +1,6 @@
-import React from 'react';
-import { Code, MessageSquare } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Code, Copy, Check, RefreshCw } from 'lucide-react';
+import { rephraseLowQualityText } from '../../utils/groqApi';
 
 interface ScreenOverview {
   text: string;
@@ -22,14 +23,64 @@ interface ScreenDataDisplayProps {
     screenOverview?: ScreenOverview;
   };
   isLive?: boolean;
-  onUseAsPrompt?: (text: string) => void;
 }
 
 export const ScreenDataDisplay: React.FC<ScreenDataDisplayProps> = ({
   data,
   isLive,
-  onUseAsPrompt,
 }) => {
+  const [rephrased, setRephrased] = useState('');
+  const [isRephrasing, setIsRephrasing] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+  const [isManualRephrasing, setIsManualRephrasing] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(rephrased);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000); 
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+    }
+  };
+
+  const handleManualRephrase = async () => {
+    if (!data.screenOverview?.text || isManualRephrasing) return;
+    
+    setIsManualRephrasing(true);
+    setIsRephrasing(true);
+    
+    try {
+      const improved = await rephraseLowQualityText(data.screenOverview.text);
+      setRephrased(improved);
+    } catch (error) {
+      console.error('Failed to manually rephrase text:', error);
+      setRephrased(data.screenOverview.text);
+    } finally {
+      setIsRephrasing(false);
+      setIsManualRephrasing(false);
+    }
+  };
+
+  useEffect(() => {
+    const rephrase = async () => {
+      if (data.screenOverview?.text) {
+        setIsRephrasing(true);
+        try {
+          const improved = await rephraseLowQualityText(data.screenOverview.text);
+          setRephrased(improved);
+        } catch (error) {
+          console.error('Failed to rephrase text:', error);
+          setRephrased(data.screenOverview.text);
+        } finally {
+          setIsRephrasing(false);
+        }
+      }
+    };
+
+    rephrase();
+  }, [data.screenOverview?.text]);
+
   return (
     <div className="w-full space-y-4">
       <div className="bg-[#202124] rounded-lg p-4 border border-[#ffffff1a] mt-3">
@@ -73,29 +124,40 @@ export const ScreenDataDisplay: React.FC<ScreenDataDisplayProps> = ({
 
               {data.screenOverview.text && (
                 <div className="mt-2">
-                  <div className="text-xs text-[#ffffff99] mb-2 flex items-center justify-between">
+                  <div className="text-xs text-[#ffffff99] mb-2 flex items-center">
                     <div className="flex items-center">
                       <Code className="h-3 w-3 mr-2" />
                       Content Preview
                     </div>
-                    <button
-                      onClick={() => onUseAsPrompt?.(data.screenOverview?.text || "")}
-                      className="flex items-center space-x-1 px-2 py-1 rounded-md 
-                               bg-[#8AB4F8] text-[#202124] hover:bg-[#8AB4F8]/90 
-                               transition-colors"
-                    >
-                      <MessageSquare className="h-3 w-3" />
-                      <span className="text-xs font-medium">Use as Prompt</span>
-                    </button>
                   </div>
                   <div className="bg-[#202124] rounded-lg overflow-hidden">
                     <div className="px-4 py-2 bg-[#ffffff0a] border-b border-[#ffffff1a] flex items-center justify-between">
-                      <div className="text-xs text-[#ffffff99]">Source Code</div>
-                      <div className="flex items-center space-x-2">
-                        <span className="flex h-1.5 w-1.5 rounded-full bg-[#8AB4F8]" />
-                        <span className="text-xs text-[#ffffff99]">
-                          {new Date().toLocaleTimeString()}
-                        </span>
+                      <div className="text-xs text-[#ffffff99]">Screen Share Content</div>
+                      <div className="flex items-center space-x-4">
+                        <button
+                          onClick={handleManualRephrase}
+                          className="flex items-center space-x-2 text-[#ffffff99] hover:text-[#ffffffcc] transition-colors"
+                          disabled={isRephrasing || isManualRephrasing}
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 ${isManualRephrasing ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          onClick={handleCopy}
+                          className="flex items-center space-x-2 text-[#ffffff99] hover:text-[#ffffffcc] transition-colors"
+                          disabled={isRephrasing || !rephrased}
+                        >
+                          {isCopied ? (
+                            <Check className="h-3.5 w-3.5" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        <div className="flex items-center space-x-2">
+                          <span className="flex h-1.5 w-1.5 rounded-full bg-[#8AB4F8]" />
+                          <span className="text-xs text-[#ffffff99]">
+                            {new Date().toLocaleTimeString()}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -104,7 +166,13 @@ export const ScreenDataDisplay: React.FC<ScreenDataDisplayProps> = ({
                                   overflow-y-auto scrollbar-thin scrollbar-thumb-[#ffffff1a] 
                                   scrollbar-track-transparent border-l-2 border-[#8AB4F8]"
                     >
-                      {data.screenOverview.text}
+                      {isRephrasing ? (
+                        <div className="flex items-center justify-center py-4">
+                          <div className="animate-pulse text-[#ffffff99]">Improving text quality...</div>
+                        </div>
+                      ) : (
+                        rephrased
+                      )}
                     </div>
 
                     <div className="px-4 py-2 bg-[#ffffff0a] border-t border-[#ffffff1a] flex justify-between items-center">
