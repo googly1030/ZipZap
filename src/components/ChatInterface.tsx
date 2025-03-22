@@ -29,6 +29,8 @@ import CodeAssistModeSelector, {
   CodeAssistMode,
 } from "./CodeAssistModeSelector/CodeAssistModeSelector";
 import VoiceMode from './VoiceMode/VoiceMode';
+import { ScreenAnalysis } from '../types/screenTypes';
+import { ImageProcessorMethods } from '../types/imageProcessorTypes';
 
 interface ChatInterfaceProps {
   userInfo: {
@@ -218,25 +220,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
     voice: 0,
   });
   const [hasStartedChat, setHasStartedChat] = useState(false);
-  interface ScreenAnalysis {
-    window: string;
-    contentType: string;
-    resolution: string;
-    frameRate: string;
-    languages: string[];
-    codeComplexity: "Low" | "Medium" | "High";
-    potentialIssues: number;
-    performanceScore: number;
-    bestPractices: { score: number; issues: number };
-  }
-
   const [screenAnalysis, setScreenAnalysis] = useState<ScreenAnalysis | null>(
     null
   );
+  const imageProcessorRef = useRef<ImageProcessorMethods>(null);
 
-  const handleAnalysisComplete = (analysis: ScreenAnalysis) => {
+  const handleAnalysisComplete = useCallback((analysis: ScreenAnalysis) => {
     setScreenAnalysis(analysis);
-  };
+  }, []);
 
   const handleVoiceResponse = (message: Message) => {
     if (voiceAssistantActive && message.type === "bot") {
@@ -1282,6 +1273,7 @@ ${result.content}`;
                       className="w-full h-full object-cover opacity-90"
                     />
                     <ImageProcessor
+                      ref={imageProcessorRef}
                       mediaStream={mediaStream}
                       onAnalysisComplete={handleAnalysisComplete}
                     />
@@ -1303,6 +1295,12 @@ ${result.content}`;
                 data={screenAnalysis || {}}
                 isLive={isScreenSharing}
                 onUseAsPrompt={handleUseAsPrompt}
+                onRefresh={async () => {
+                  if (imageProcessorRef.current) {
+                    const newAnalysis = await imageProcessorRef.current.processFrameManually();
+                    setScreenAnalysis(newAnalysis);
+                  }
+                }}
               />
             </div>
           )}

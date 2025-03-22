@@ -1,33 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Code, Copy, Check, RefreshCw } from 'lucide-react';
 import { rephraseLowQualityText } from '../../utils/groqApi';
-
-interface ScreenOverview {
-  text: string;
-  lineCount: number;
-  visibleRange: string;
-  timestamp: number;
-}
+import { ScreenAnalysis } from '../../types/screenTypes';
 
 interface ScreenDataDisplayProps {
-  data: {
-    window?: string;
-    contentType?: string;
-    resolution?: string;
-    frameRate?: string;
-    languages?: string[];
-    codeComplexity?: "Low" | "Medium" | "High";
-    potentialIssues?: number;
-    performanceScore?: number;
-    bestPractices?: { score: number; issues: number };
-    screenOverview?: ScreenOverview;
-  };
+  data: ScreenAnalysis;
   isLive?: boolean;
+  onUseAsPrompt?: (text: string) => void;
+  onRefresh?: () => Promise<void>; // Add this prop
 }
 
 export const ScreenDataDisplay: React.FC<ScreenDataDisplayProps> = ({
   data,
   isLive,
+  onRefresh
 }) => {
   const [rephrased, setRephrased] = useState('');
   const [isRephrasing, setIsRephrasing] = useState(false);
@@ -45,17 +31,25 @@ export const ScreenDataDisplay: React.FC<ScreenDataDisplayProps> = ({
   };
 
   const handleManualRephrase = async () => {
-    if (!data.screenOverview?.text || isManualRephrasing) return;
+    if (isManualRephrasing) return;
     
     setIsManualRephrasing(true);
     setIsRephrasing(true);
     
     try {
-      const improved = await rephraseLowQualityText(data.screenOverview.text);
-      setRephrased(improved);
+      // First trigger a new screen capture
+      if (onRefresh) {
+        await onRefresh();
+      }
+      
+      // Then process the new text once data is updated
+      if (data.screenOverview?.text) {
+        const improved = await rephraseLowQualityText(data.screenOverview.text);
+        setRephrased(improved);
+      }
     } catch (error) {
       console.error('Failed to manually rephrase text:', error);
-      setRephrased(data.screenOverview.text);
+      setRephrased(data.screenOverview?.text || '');
     } finally {
       setIsRephrasing(false);
       setIsManualRephrasing(false);

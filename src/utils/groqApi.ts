@@ -12,14 +12,21 @@ export const rephraseLowQualityText = async (text: string): Promise<string> => {
       messages: [
         {
           role: 'system',
-          content: 'You are a text improvement assistant. Rephrase the given text to be clear and coherent while maintaining the original meaning. Fix any OCR errors and improve readability.'
+          content: `Analyze the given text and provide a response in this format:
+
+          Content Overview:
+          - Describe what the text is about
+          - Identify main topics or concepts
+          - Note any technical terms or code elements
+
+          Present the analysis in a clear, structured format using markdown. Focus on understanding rather than correction.`
         },
         {
           role: 'user',
           content: text
         }
       ],
-      model: 'mixtral-8x7b-32768',
+      model: 'gemma2-9b-it',
       temperature: 0.3,
       max_tokens: 1024,
       top_p: 1,
@@ -29,6 +36,6 @@ export const rephraseLowQualityText = async (text: string): Promise<string> => {
     return response.choices[0].message.content ?? '';
   } catch (error) {
     console.error('Error rephrasing text:', error);
-    return text; // Return original text if rephrasing fails
+    return text; 
   }
 };
