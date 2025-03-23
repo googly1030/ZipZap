@@ -1,4 +1,4 @@
-import React, { useState, useRef,useCallback } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import {
   MessageSquare,
   Send,
@@ -28,9 +28,12 @@ import VoiceAssistant from "./VoiceAssistant";
 import CodeAssistModeSelector, {
   CodeAssistMode,
 } from "./CodeAssistModeSelector/CodeAssistModeSelector";
-import VoiceMode from './VoiceMode/VoiceMode';
-import { ScreenAnalysis } from '../types/screenTypes';
-import { ImageProcessorMethods } from '../types/imageProcessorTypes';
+import VoiceMode from "./VoiceMode/VoiceMode";
+import { ScreenAnalysis } from "../types/screenTypes";
+import { ImageProcessorMethods } from "../types/imageProcessorTypes";
+import { generateEmail } from '../services/emailService';
+import { EmailMetadata } from '../types/emailTypes';
+import SendEmailButton from './SendEmailButton';
 
 interface ChatInterfaceProps {
   userInfo: {
@@ -42,7 +45,6 @@ interface ChatInterfaceProps {
 }
 
 import {
-  generateEmail,
   generatePresentation,
   generateCodeAssistance,
 } from "../api/client";
@@ -99,6 +101,44 @@ const CodeBlock: React.FC<{
       </SyntaxHighlighter>
     </div>
   );
+};
+
+// Add these helper functions after the imports and before the component definitions
+
+const isEmailContent = (content: string | object): boolean => {
+  if (typeof content !== 'string') return false;
+  
+  // Check for common email markers
+  const hasEmailMarkers = [
+    'From:',
+    'Subject:',
+    'Email:',
+    'Role:',
+    'Company:'
+  ].some(marker => content.includes(marker));
+
+  const hasEmailStructure = content.split('\n').length >= 3 && 
+                          content.includes('@') &&
+                          hasEmailMarkers;
+
+  return hasEmailStructure;
+};
+
+const isPresentationContent = (content: string | object): boolean => {
+  if (typeof content !== 'string') return false;
+
+  // Check for presentation markers
+  const hasPresentationMarkers = [
+    'Title:',
+    'Slide',
+    '\n\n'
+  ].some(marker => content.includes(marker));
+
+  const hasSlideStructure = content.split('\n\n').length >= 2 &&
+                           /Slide \d+:/.test(content) &&
+                           hasPresentationMarkers;
+
+  return hasSlideStructure;
 };
 
 // First, add this new component above your ChatInterface component
@@ -197,7 +237,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
       id: "initial-message",
     },
   ]);
-  const [selectedFeature, setSelectedFeature] = useState<string | null>("codeAssist");
+  const [selectedFeature, setSelectedFeature] = useState<string | null>(
+    "codeAssist"
+  );
   const [selectedAudience, setSelectedAudience] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState("");
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
@@ -286,7 +328,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
   const switchFeature = (featureId: string) => {
     setSelectedFeature(featureId);
     setSelectedAudience(null);
-    setHasStartedChat(false); 
+    setHasStartedChat(false);
     setIsVoiceModeActive(false);
     if (featureId !== "codeAssist") {
       setMessages([
@@ -313,6 +355,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
+
+    if (isModifying) {
+      if (selectedFeature === "email") {
+        await handleModifyEmail(inputValue);
+      } else if (selectedFeature === "presentation") {
+        await handleModifyPresentation(inputValue);
+      }
+      // Reset modification mode after handling
+      setIsModifying(false);
+      setSelectedMessage(null);
+      setInputValue("");
+      return;
+    }
 
     // Clear textarea height and value
     const textarea = document.querySelector("textarea");
@@ -374,9 +429,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
 
           const result = await generateEmail(
             inputValue,
-            "professional",
             emailMetadata
           );
+      
 
           if (result) {
             const formattedEmail = `From: ${userInfo.name}
@@ -529,81 +584,70 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
     setInputValue("");
   };
 
-  const handleModifyEmail = async (modificationPrompt: string) => {
-    if (!selectedMessage || !selectedMessage.content) return;
+const handleModifyEmail = async (modificationPrompt: string) => {
+  if (!selectedMessage || !selectedMessage.content) return;
 
-    const timestamp = Date.now();
-    const userModRequest = {
-      type: "user" as const,
-      content: `Modification request: ${modificationPrompt}`,
-      id: `mod-request-${timestamp}`,
+  try {
+    const emailMetadata: EmailMetadata = {
+      sender: {
+        name: userInfo.name,
+        role: userInfo.jobRole,
+        company: userInfo.company,
+        email: userInfo.email,
+      }
     };
-    setMessages((prev) => [...prev, userModRequest]);
 
-    try {
-      const result = await generateEmail(
-        "",
-        "professional",
-        {
-          sender: {
-            name: userInfo.name,
-            role: userInfo.jobRole,
-            company: userInfo.company,
-            email: userInfo.email,
-          },
-        },
-        {
-          originalContent:
-            typeof selectedMessage.content === "string"
-              ? selectedMessage.content
-              : "",
-          modificationRequest: modificationPrompt,
-        }
-      );
+    const result = await generateEmail(
+      "",
+      emailMetadata,
+      {
+        originalContent: selectedMessage.content as string,
+        modificationRequest: modificationPrompt
+      }
+    );
 
-      if (result) {
-        const formattedEmail = `From: ${userInfo.name}
+    if (result) {
+      // Replace the selected message with modified version
+      setMessages(prev => prev.map(msg => 
+        msg.id === selectedMessage.id ? {
+          ...msg,
+          content: `From: ${userInfo.name}
 Role: ${userInfo.jobRole}
 Company: ${userInfo.company}
 Email: ${userInfo.email}
 
 Subject: ${result.subject}
 
-${result.content}`;
+${result.content}`,
+          id: `${msg.id}-modified-${Date.now()}`
+        } : msg
+      ));
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            type: "bot",
-            content: formattedEmail,
-            id: `mod-result-${Date.now()}`,
-          },
-        ]);
-      }
-    } catch (error) {
-      console.error("Modification error:", error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          type: "bot",
-          content: "Sorry, there was an error modifying the email.",
-          id: `mod-error-${Date.now()}`,
-        },
-      ]);
+      // Add modification confirmation
+      setMessages(prev => [...prev, {
+        type: "bot",
+        content: "Email has been modified according to your request.",
+        id: `mod-confirm-${Date.now()}`
+      }]);
     }
-
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      console.error("Email modification error:", error.message);
+    } else {
+      console.error("Unknown error occurred during email modification.");
+    }
+    console.error("Email modification error:", error);
+    setMessages(prev => [...prev, {
+      type: "bot",
+      content: `Error modifying email: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      id: `error-${Date.now()}`
+    }]);
+  } finally {
     setIsModifying(false);
     setSelectedMessage(null);
     setInputValue("");
-  };
-
-  const isEmailContent = (content: string) => {
-    return content.includes("From:") && content.includes("Subject:");
-  };
-
-  const isPresentationContent = (content: string) => {
-    return content.includes("Title:") && content.includes("Slide");
-  };
+  }
+};
 
   const handleModifyPresentation = async (modificationPrompt: string) => {
     if (!selectedMessage || !selectedMessage.content) return;
@@ -846,8 +890,17 @@ ${result.content}`;
   const handleVoiceModeStart = useCallback(() => {
     setIsVoiceModeActive(true);
   }, []);
-  
 
+  const cancelModification = () => {
+    setIsModifying(false);
+    setSelectedMessage(null);
+    setInputValue("");
+  };
+
+  const toggleModificationMode = (message: Message) => {
+    setSelectedMessage(message);
+    setIsModifying(true);
+  };
 
   // Update the main container layout
   return (
@@ -954,11 +1007,11 @@ ${result.content}`;
                 // Show CodeAssistModeSelector only when codeAssist is selected and chat hasn't started
                 <div className="flex-1 flex items-center justify-center">
                   <div className="max-w-[900px] w-full mx-auto px-4">
-                  <CodeAssistModeSelector
+                    <CodeAssistModeSelector
                       currentMode={codeAssistMode}
                       onModeSelect={(mode) => {
                         setCodeAssistMode(mode);
-                        if (mode === 'voice') {
+                        if (mode === "voice") {
                           handleVoiceModeStart();
                         } else if (isScreenSharing && mode !== "screen") {
                           stopScreenShare();
@@ -1063,7 +1116,8 @@ ${result.content}`;
                                 )}
 
                               {/* References */}
-                              {(message.content.references ?? []).length > 0 && (
+                              {(message.content.references ?? []).length >
+                                0 && (
                                 <div className="mt-4 border-t border-[#ffffff0f] pt-4">
                                   <h3 className="text-sm font-medium text-white mb-2">
                                     Additional Resources
@@ -1092,35 +1146,56 @@ ${result.content}`;
                       </div>
 
                       {/* Modification buttons for email and presentation */}
-                      {message.type === "bot" &&
-                        typeof message.content === "string" && (
-                          <div className="flex justify-start mt-2">
-                            {isEmailContent(message.content) && (
-                              <button
-                                onClick={() => {
-                                  setSelectedMessage(message);
-                                  setIsModifying(true);
-                                  setSelectedFeature("email");
-                                }}
-                                className="text-sm text-[#8AB4F8] hover:text-white transition-colors"
-                              >
-                                Modify Email
-                              </button>
-                            )}
-                            {isPresentationContent(message.content) && (
-                              <button
-                                onClick={() => {
-                                  setSelectedMessage(message);
-                                  setIsModifying(true);
-                                  setSelectedFeature("presentation");
-                                }}
-                                className="text-sm text-[#8AB4F8] hover:text-white transition-colors ml-2"
-                              >
-                                Modify Presentation
-                              </button>
+                      {message.type === "bot" && typeof message.content === "string" && (
+                        <div className="flex justify-start mt-2">
+                          {isEmailContent(message.content) && (
+                            <button
+                              onClick={() => isModifying ? cancelModification() : toggleModificationMode(message)}
+                              className="text-sm text-[#8AB4F8] hover:text-white transition-colors"
+                            >
+                              {isModifying && selectedMessage?.id === message.id 
+                                ? "Cancel Modification" 
+                                : "Modify Email"}
+                            </button>
+                          )}
+                          {isPresentationContent(message.content) && (
+                            <button
+                              onClick={() => {
+                                setSelectedMessage(message);
+                                setIsModifying(true);
+                                setSelectedFeature("presentation");
+                              }}
+                              className="text-sm text-[#8AB4F8] hover:text-white transition-colors ml-2"
+                            >
+                              Modify Presentation
+                            </button>
+                          )}
+                        </div>
+                      )}
+                   {message.type === "bot" && typeof message.content === "string" && isEmailContent(message.content) && (
+                      <div className="relative backdrop-blur-lg bg-white/5 border border-purple-900/30 rounded-2xl p-4">
+                        {/* Email Header with Send Button */}
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="text-white/90">
+                            {message.content.match(/Subject: (.+)/)?.[1] && (
+                              <h3 className="font-medium">
+                                {message.content.match(/Subject: (.+)/)?.[1] ?? 'No Subject'}
+                              </h3>
                             )}
                           </div>
-                        )}
+                          <SendEmailButton
+                            emailContent={message.content.split('\n\n').slice(1).join('\n\n')}
+                            subject={message.content.match(/Subject: (.+)/)?.[1] ?? 'No Subject'}
+                            senderEmail={userInfo.email}
+                          />
+                        </div>
+                        
+                        {/* Email Content */}
+                        <div className="whitespace-pre-line text-white/80 leading-relaxed">
+                          {message.content.split('\n\n').slice(1).join('\n\n')}
+                        </div>
+                      </div>
+                    )}
                     </div>
                   ))}
                 </div>
@@ -1170,11 +1245,11 @@ ${result.content}`;
                         }}
                         placeholder={
                           isModifying
-                            ? "Enter modification instructions..."
-                            : "Message Budy-X ... (Shift+Enter for new line)"
+                            ? "Enter your modification request..."
+                            : "Type your email content..."
                         }
                         style={{
-                          height: "auto",
+                          height: "55px",
                           minHeight: "44px",
                           maxHeight: "300px",
                           resize: "none",
@@ -1194,10 +1269,15 @@ ${result.content}`;
                                 pr-[144px] md:pr-[156px]"
                       />
                       <div className="absolute right-2 flex items-center space-x-1 md:space-x-2">
-                      {selectedFeature === "codeAssist" && codeAssistMode === "screen" && (
+                        {selectedFeature === "codeAssist" &&
+                          codeAssistMode === "screen" && (
                             <button
                               type="button"
-                              onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+                              onClick={
+                                isScreenSharing
+                                  ? stopScreenShare
+                                  : startScreenShare
+                              }
                               className={`p-2 rounded-full transition-colors ${
                                 isScreenSharing
                                   ? "text-red-500 hover:text-red-400"
@@ -1297,34 +1377,41 @@ ${result.content}`;
                 onUseAsPrompt={handleUseAsPrompt}
                 onRefresh={async () => {
                   if (imageProcessorRef.current) {
-                    const newAnalysis = await imageProcessorRef.current.processFrameManually();
+                    const newAnalysis =
+                      await imageProcessorRef.current.processFrameManually();
                     setScreenAnalysis(newAnalysis);
                   }
                 }}
               />
             </div>
           )}
-          {codeAssistMode === 'voice' && (
+          {codeAssistMode === "voice" && (
             <VoiceMode
               isActive={isVoiceModeActive}
               onSpeechResult={(text) => {
                 if (text.trim()) {
                   // Append new message instead of replacing
-                  setMessages(prev => [...prev, {
-                    type: 'user',
-                    content: text,
-                    id: `speech-${Date.now()}` // Unique ID for each message
-                  }]);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      type: "user",
+                      content: text,
+                      id: `speech-${Date.now()}`, // Unique ID for each message
+                    },
+                  ]);
                   setHasStartedChat(true);
                 }
               }}
               onResponse={(response) => {
                 // Append new bot message instead of replacing
-                setMessages(prev => [...prev, {
-                  type: 'bot',
-                  content: response,
-                  id: `ai-response-${Date.now()}` // Unique ID for each response
-                }]);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    type: "bot",
+                    content: response,
+                    id: `ai-response-${Date.now()}`, // Unique ID for each response
+                  },
+                ]);
               }}
             />
           )}
