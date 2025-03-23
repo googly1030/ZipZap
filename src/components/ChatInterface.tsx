@@ -584,6 +584,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
     setInputValue("");
   };
 
+// Update the handleModifyEmail function
 const handleModifyEmail = async (modificationPrompt: string) => {
   if (!selectedMessage || !selectedMessage.content) return;
 
@@ -607,7 +608,7 @@ const handleModifyEmail = async (modificationPrompt: string) => {
     );
 
     if (result) {
-      // Replace the selected message with modified version
+      // Replace the selected message with modified version and add status indicator
       setMessages(prev => prev.map(msg => 
         msg.id === selectedMessage.id ? {
           ...msg,
@@ -622,20 +623,8 @@ ${result.content}`,
           id: `${msg.id}-modified-${Date.now()}`
         } : msg
       ));
-
-      // Add modification confirmation
-      setMessages(prev => [...prev, {
-        type: "bot",
-        content: "Email has been modified according to your request.",
-        id: `mod-confirm-${Date.now()}`
-      }]);
     }
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      console.error("Email modification error:", error.message);
-    } else {
-      console.error("Unknown error occurred during email modification.");
-    }
+  } catch (error) {
     console.error("Email modification error:", error);
     setMessages(prev => [...prev, {
       type: "bot",
@@ -1028,127 +1017,163 @@ ${result.content}`,
                 >
                   {messages.map((message) => (
                     <div key={message.id} className="flex flex-col max-w-full">
-                      <div
-                        className={`flex ${
-                          message.type === "user"
-                            ? "justify-end"
-                            : "justify-start"
-                        }`}
-                      >
-                        <div
-                          className={`max-w-[95%] md:max-w-[85%] lg:max-w-[80%] rounded-2xl 
-                                  px-4 md:px-6 py-3 md:py-4 shadow-lg ${
-                                    message.type === "user"
-                                      ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white"
-                                      : "backdrop-blur-lg bg-white/5 border border-purple-900/30 text-white"
-                                  }`}
-                        >
-                          {message.content === "loading" ? (
-                            <LoadingDots />
-                          ) : typeof message.content === "string" ? (
-                            <pre className="whitespace-pre-line">
-                              {message.content}
-                            </pre>
-                          ) : (
-                            <div className="space-y-6">
-                              {/* Main Response */}
-                              <div
-                                className="bg-gradient-to-br from-purple-900/20 to-pink-900/20 
-                                            backdrop-blur-sm rounded-lg p-4 
-                                            border border-purple-900/30 
-                                            shadow-[0_0_15px_rgba(147,51,234,0.1)]"
-                              >
-                                <FormattedResponse
-                                  content={message.content.response}
-                                />
-                              </div>
+                      {/* Only render the message container if there's content to show */}
+                      {(message.type === "user" || 
+                        message.content === "loading" || 
+                        (typeof message.content === "string" && 
+                         !isEmailContent(message.content) && 
+                         !isPresentationContent(message.content)) || 
+                        typeof message.content === "object") && (
+                        <div className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
+                          <div className={`max-w-[95%] md:max-w-[85%] lg:max-w-[80%] rounded-2xl 
+                                          px-4 md:px-6 py-3 md:py-4 shadow-lg ${
+                                            message.type === "user"
+                                              ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white"
+                                              : "backdrop-blur-lg bg-white/5 border border-purple-900/30 text-white"
+                                          }`}>
+                            {message.content === "loading" ? (
+                              <LoadingDots />
+                            ) : typeof message.content === "string" ? (
+                              !isEmailContent(message.content) && (
+                                <pre className="whitespace-pre-line">
+                                  {message.content}
+                                </pre>
+                              )
+                            ) : (
+                              // Complex message content (code, suggestions, etc.)
+                              <div className="space-y-6">
+                                {/* Main Response */}
+                                <div
+                                  className="bg-gradient-to-br from-purple-900/20 to-pink-900/20 
+                                              backdrop-blur-sm rounded-lg p-4 
+                                              border border-purple-900/30 
+                                              shadow-[0_0_15px_rgba(147,51,234,0.1)]"
+                                >
+                                  <FormattedResponse
+                                    content={message.content.response}
+                                  />
+                                </div>
 
-                              {/* Code Snippets */}
-                              {message.content.codeSnippets?.map(
-                                (snippet, index) => (
-                                  <div
-                                    key={index}
-                                    className="rounded-lg overflow-hidden bg-[#2A2B2D]"
-                                  >
-                                    <div className="px-4 py-2 bg-[#202124] border-b border-[#ffffff0f] flex justify-between items-center">
-                                      <h3 className="text-sm font-medium text-white">
-                                        {snippet.title}
-                                      </h3>
-                                      <div className="text-xs text-[#ffffff66]">
-                                        {snippet.language}
+                                {/* Code Snippets */}
+                                {message.content.codeSnippets?.map(
+                                  (snippet, index) => (
+                                    <div
+                                      key={index}
+                                      className="rounded-lg overflow-hidden bg-[#2A2B2D]"
+                                    >
+                                      <div className="px-4 py-2 bg-[#202124] border-b border-[#ffffff0f] flex justify-between items-center">
+                                        <h3 className="text-sm font-medium text-white">
+                                          {snippet.title}
+                                        </h3>
+                                        <div className="text-xs text-[#ffffff66]">
+                                          {snippet.language}
+                                        </div>
+                                      </div>
+                                      <div className="p-4">
+                                        <CodeBlock
+                                          code={snippet.code}
+                                          language={snippet.language}
+                                        />
+                                        {snippet.explanation && (
+                                          <p className="mt-4 text-sm text-[#ffffff99]">
+                                            {snippet.explanation}
+                                          </p>
+                                        )}
                                       </div>
                                     </div>
-                                    <div className="p-4">
-                                      <CodeBlock
-                                        code={snippet.code}
-                                        language={snippet.language}
-                                      />
-                                      {snippet.explanation && (
-                                        <p className="mt-4 text-sm text-[#ffffff99]">
-                                          {snippet.explanation}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                )
-                              )}
+                                  )
+                                )}
 
-                              {/* Suggestions */}
-                              {message.content.suggestions &&
-                                message.content.suggestions.length > 0 && (
-                                  <div className="rounded-lg bg-[#2A2B2D]/50 p-4">
+                                {/* Suggestions */}
+                                {message.content.suggestions &&
+                                  message.content.suggestions.length > 0 && (
+                                    <div className="rounded-lg bg-[#2A2B2D]/50 p-4">
+                                      <h3 className="text-sm font-medium text-white mb-2">
+                                        Best Practices
+                                      </h3>
+                                      <ul className="list-disc list-inside space-y-1">
+                                        {message.content.suggestions.map(
+                                          (suggestion, index) => (
+                                            <li
+                                              key={index}
+                                              className="text-sm text-[#ffffff99]"
+                                            >
+                                              {suggestion}
+                                            </li>
+                                          )
+                                        )}
+                                      </ul>
+                                    </div>
+                                  )}
+
+                                {/* References */}
+                                {(message.content.references ?? []).length >
+                                  0 && (
+                                  <div className="mt-4 border-t border-[#ffffff0f] pt-4">
                                     <h3 className="text-sm font-medium text-white mb-2">
-                                      Best Practices
+                                      Additional Resources
                                     </h3>
-                                    <ul className="list-disc list-inside space-y-1">
-                                      {message.content.suggestions.map(
-                                        (suggestion, index) => (
-                                          <li
-                                            key={index}
-                                            className="text-sm text-[#ffffff99]"
-                                          >
-                                            {suggestion}
+                                    <ul className="space-y-1">
+                                      {message.content.references?.map(
+                                        (ref, index) => (
+                                          <li key={index}>
+                                            <a
+                                              href={ref}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-sm text-[#8AB4F8] hover:underline"
+                                            >
+                                              {ref}
+                                            </a>
                                           </li>
                                         )
                                       )}
                                     </ul>
                                   </div>
                                 )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
-                              {/* References */}
-                              {(message.content.references ?? []).length >
-                                0 && (
-                                <div className="mt-4 border-t border-[#ffffff0f] pt-4">
-                                  <h3 className="text-sm font-medium text-white mb-2">
-                                    Additional Resources
+                      {/* Email content rendering stays separate */}
+                      {message.type === "bot" && 
+                       typeof message.content === "string" && 
+                       isEmailContent(message.content) && (
+                        <div className="relative bg-white/5 border border-purple-900/30 rounded-2xl overflow-hidden">
+                          {/* Email Header with Send Button and Modified Status */}
+                          <div className="flex justify-between items-center p-4 border-b border-purple-900/30">
+                            <div className="flex items-center gap-3">
+                              <div className="text-white/90">
+                                {message.content.match(/Subject: (.+)/)?.[1] && (
+                                  <h3 className="font-medium">
+                                    {message.content.match(/Subject: (.+)/)?.[1] ?? 'No Subject'}
                                   </h3>
-                                  <ul className="space-y-1">
-                                    {message.content.references?.map(
-                                      (ref, index) => (
-                                        <li key={index}>
-                                          <a
-                                            href={ref}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-sm text-[#8AB4F8] hover:underline"
-                                          >
-                                            {ref}
-                                          </a>
-                                        </li>
-                                      )
-                                    )}
-                                  </ul>
-                                </div>
+                                )}
+                              </div>
+                              {message.id?.includes('-modified-') && (
+                                <span className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded">
+                                  Modified
+                                </span>
                               )}
                             </div>
-                          )}
-                        </div>
-                      </div>
+                            <SendEmailButton
+                              emailContent={message.content}
+                              subject={message.content.match(/Subject: (.+)/)?.[1] ?? 'No Subject'}
+                              senderEmail={userInfo.email}
+                            />
+                          </div>
+                          
+                          {/* Email Content */}
+                          <div className="p-4 text-white/80 leading-relaxed">
+                            <div className="whitespace-pre-line">
+                              {message.content.split('\n\n').slice(1).join('\n\n')}
+                            </div>
+                          </div>
 
-                      {/* Modification buttons for email and presentation */}
-                      {message.type === "bot" && typeof message.content === "string" && (
-                        <div className="flex justify-start mt-2">
-                          {isEmailContent(message.content) && (
+                          {/* Modification Button */}
+                          <div className="px-4 pb-4 flex justify-start">
                             <button
                               onClick={() => isModifying ? cancelModification() : toggleModificationMode(message)}
                               className="text-sm text-[#8AB4F8] hover:text-white transition-colors"
@@ -1157,45 +1182,61 @@ ${result.content}`,
                                 ? "Cancel Modification" 
                                 : "Modify Email"}
                             </button>
-                          )}
-                          {isPresentationContent(message.content) && (
-                            <button
-                              onClick={() => {
-                                setSelectedMessage(message);
-                                setIsModifying(true);
-                                setSelectedFeature("presentation");
-                              }}
-                              className="text-sm text-[#8AB4F8] hover:text-white transition-colors ml-2"
-                            >
-                              Modify Presentation
-                            </button>
-                          )}
+                          </div>
                         </div>
                       )}
-                   {message.type === "bot" && typeof message.content === "string" && isEmailContent(message.content) && (
-                      <div className="relative backdrop-blur-lg bg-white/5 border border-purple-900/30 rounded-2xl p-4">
-                        {/* Email Header with Send Button */}
-                        <div className="flex justify-between items-start mb-4">
-                          <div className="text-white/90">
-                            {message.content.match(/Subject: (.+)/)?.[1] && (
-                              <h3 className="font-medium">
-                                {message.content.match(/Subject: (.+)/)?.[1] ?? 'No Subject'}
-                              </h3>
-                            )}
+
+                      {/* Add presentation content rendering */}
+                      {message.type === "bot" && 
+                       typeof message.content === "string" && 
+                       isPresentationContent(message.content) && (
+                        <div className="relative bg-white/5 border border-purple-900/30 rounded-2xl overflow-hidden">
+                          <div className="p-4 space-y-6">
+                            {message.content.split('\n\n').map((section, index) => {
+                              if (section.startsWith('Title:')) {
+                                return (
+                                  <h2 key={index} className="text-xl font-semibold text-white">
+                                    {section.replace('Title:', '').trim()}
+                                  </h2>
+                                );
+                              }
+                              
+                              const match = section.match(/^Slide (\d+):\s*(.+?)(?:\n|$)([\s\S]*)/);
+                              if (match) {
+                                const [, slideNum, slideTitle, slideContent] = match;
+                                return (
+                                  <div key={index} className="bg-white/5 rounded-lg p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                      <h3 className="text-lg font-medium text-white">
+                                        {slideTitle}
+                                      </h3>
+                                      <span className="text-sm text-gray-400">
+                                        Slide {slideNum}
+                                      </span>
+                                    </div>
+                                    <div className="text-white/80 whitespace-pre-line">
+                                      {slideContent.trim()}
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })}
                           </div>
-                          <SendEmailButton
-                            emailContent={message.content.split('\n\n').slice(1).join('\n\n')}
-                            subject={message.content.match(/Subject: (.+)/)?.[1] ?? 'No Subject'}
-                            senderEmail={userInfo.email}
-                          />
+
+                          {/* Modification Button */}
+                          <div className="px-4 pb-4 flex justify-start">
+                            <button
+                              onClick={() => isModifying ? cancelModification() : toggleModificationMode(message)}
+                              className="text-sm text-[#8AB4F8] hover:text-white transition-colors"
+                            >
+                              {isModifying && selectedMessage?.id === message.id 
+                                ? "Cancel Modification" 
+                                : "Modify Presentation"}
+                            </button>
+                          </div>
                         </div>
-                        
-                        {/* Email Content */}
-                        <div className="whitespace-pre-line text-white/80 leading-relaxed">
-                          {message.content.split('\n\n').slice(1).join('\n\n')}
-                        </div>
-                      </div>
-                    )}
+                      )}
                     </div>
                   ))}
                 </div>

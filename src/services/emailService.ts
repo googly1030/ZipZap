@@ -22,48 +22,37 @@ export const generateEmail = async (
   const signal = activeRequest.signal;
 
   try {
-    // Helper function to clean and extract email parts
-    const processEmailResponse = (response: string) => {
-      // Remove any introductory text and clean up the response
-      const cleanedResponse = response
-        .replace(/.*?(Subject:)/i, '$1') // Keep only the first subject line
-        .replace(/Here is .+?:\n*/gi, '') // Remove introductory phrases
-        .replace(/Subject:.*\n.*Subject:/i, 'Subject:') // Remove duplicate subject lines
+    const processResponse = (response: string): EmailResponse => {
+      // Get only the last email format if multiple exist
+      const lastEmailIndex = response.toLowerCase().lastIndexOf('subject:');
+      const relevantContent = lastEmailIndex > -1 
+        ? response.slice(lastEmailIndex)
+        : response;
+
+      // Clean the response
+      const cleanedResponse = relevantContent
+        .replace(/^(?:Here is|I have created|Here's)(?: an?| the)? (?:email|response|draft).*?\n/i, '')
         .trim();
 
       const lines = cleanedResponse.split('\n');
       const subjectLine = lines.find(line => line.toLowerCase().startsWith('subject:'));
-      const subject = subjectLine 
-        ? subjectLine.replace(/^subject:\s*/i, '').trim() 
-        : '';
-      
-      // Remove the subject line from content and clean up
+      const subject = subjectLine ? subjectLine.replace(/^subject:\s*/i, '').trim() : '';
+
+      // Remove metadata and subject line from content
       const content = lines
         .filter(line => !line.toLowerCase().startsWith('subject:'))
+        .filter(line => !line.match(/^(?:from|role|company|email):/i))
         .join('\n')
         .trim();
 
-      // Format content without URL encoding
-      const formattedContent = content
-        .replace(/\*/g, '•'); // Replace markdown bullets with bullet points
-
-      return { 
-        subject, 
-        content: formattedContent
-      };
+      return { subject, content };
     };
 
     if (modification) {
-      const modificationPrompt = `Modify this email:
-${modification.originalContent}
+      const modificationPrompt = `Modify this email. Only provide the modified email content, no additional text:
+      ${modification.originalContent}
 
-Changes requested: ${modification.modificationRequest}
-
-Important:
-- Include exactly one subject line at the top
-- Remove any introductory text
-- Maintain professional formatting
-- Keep the email structure intact`;
+      Changes requested: ${modification.modificationRequest}`;
 
       const completion = await client.chat.completions.create({
         messages: [{ role: 'user', content: modificationPrompt }],
@@ -75,23 +64,20 @@ Important:
       const modifiedResponse = completion.choices[0]?.message?.content;
       if (!modifiedResponse) throw new Error('No response from AI');
 
-      return processEmailResponse(modifiedResponse);
+      return processResponse(modifiedResponse);
     }
 
     // Handle new email generation
-    const emailPrompt = `Write a professional email about: ${topic}
-
-Important:
-- Include exactly one subject line at the start, formatted as "Subject: Your Subject Here"
-- Do not repeat the subject line in the body
-- Start the email body with "Dear" or appropriate greeting
-- Do not include any introductory text before the subject
+    const emailPrompt = `Generate a professional email with the following requirements:
+- Start with "Subject:" line
+- Do not include any introductory text
+- Include the email content immediately after the subject
+${topic ? `\nTopic: ${topic}` : ''}
 ${metadata ? `
 From: ${metadata.sender.name}
 Role: ${metadata.sender.role}
 Company: ${metadata.sender.company}
-Email: ${metadata.sender.email}
-` : ''}`;
+Email: ${metadata.sender.email}` : ''}`;
 
     const completion = await client.chat.completions.create({
       messages: [{ role: 'user', content: emailPrompt }],
@@ -103,7 +89,7 @@ Email: ${metadata.sender.email}
     const response = completion.choices[0]?.message?.content;
     if (!response) throw new Error('No response from AI');
 
-    return processEmailResponse(response);
+    return processResponse(response);
 
   } catch (error) {
     if (signal.aborted) {
