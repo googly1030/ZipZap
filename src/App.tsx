@@ -35,7 +35,7 @@ function App() {
           path="/get-started" 
           element={
             userInfo.name ? 
-              <Navigate to="/chat" replace /> : 
+              <Navigate to="/chat\" replace /> : 
               <UserForm onSubmit={handleUserSubmit} />
           } 
         />
