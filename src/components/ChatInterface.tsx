@@ -1,1495 +1,574 @@
-import React, { useState, useRef, useCallback } from "react";
-import {
-  MessageSquare,
-  Send,
-  Mail,
-  FileText,
-  Users,
-  Briefcase,
-  GraduationCap,
-  Building2,
-  Code,
-  Share2,
-  Mic,
-  X,
-  Clipboard,
-} from "lucide-react";
-import styles from "./ChatInterface.module.css";
-import { SpeechRecognitionService } from "../utils/speechRecognition";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import Header from "./LandingHeader";
-import AlertDialog from "./AlertDialog";
-import { Alert, Snackbar } from "@mui/material";
-import ImageProcessor from "./ImageProcessor";
-import LoadingDots from "./LoadingDots";
-import ScreenDataDisplay from "./ScreenShare/ScreenDataDisplay";
-import VoiceAssistant from "./VoiceAssistant";
-import CodeAssistModeSelector, {
-  CodeAssistMode,
-} from "./CodeAssistModeSelector/CodeAssistModeSelector";
-import VoiceMode from "./VoiceMode/VoiceMode";
-import { ScreenAnalysis } from "../types/screenTypes";
-import { ImageProcessorMethods } from "../types/imageProcessorTypes";
-import { generateEmail } from '../services/emailService';
-import { EmailMetadata } from '../types/emailTypes';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { 
+  Send, 
+  Mic, 
+  Share2, 
+  MessageSquare, 
+  Mail, 
+  Presentation, 
+  Code2, 
+  Volume2, 
+  MicOff,
+  Settings
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import Header from './LandingHeader';
+import CodeAssistModeSelector, { CodeAssistMode } from './CodeAssistModeSelector/CodeAssistModeSelector';
+import VoiceMode from './VoiceMode/VoiceMode';
+import VoiceAssistant from './VoiceAssistant';
+import ImageProcessor, { ImageProcessorMethods } from './ImageProcessor';
+import ScreenDataDisplay from './ScreenShare/ScreenDataDisplay';
+import { CodeBlock } from './CodeBlock';
+import LoadingDots from './LoadingDots';
 import SendEmailButton from './SendEmailButton';
+import AlertDialog from './AlertDialog';
+import ApiKeyPrompt from './ApiKeyPrompt';
+import styles from './ChatInterface.module.css';
+import { generateCodeAssistance } from '../api/client';
+import { generateEmail } from '../services/emailService';
+import { generatePresentation } from '../api/client';
+import { CodeAssistanceResponse, CodeSnippet } from '../types/codeTypes';
+import { EmailResponse } from '../types/emailTypes';
+import { ScreenAnalysis } from '../types/screenTypes';
+import { hasValidApiKeys } from '../utils/apiKeyManager';
+
+interface UserInfo {
+  name: string;
+  email: string;
+  company: string;
+  jobRole: string;
+}
 
 interface ChatInterfaceProps {
-  userInfo: {
-    name: string;
-    email: string;
-    company: string;
-    jobRole: string;
-  };
+  userInfo: UserInfo;
 }
-
-import {
-  generatePresentation,
-  generateCodeAssistance,
-} from "../api/client";
 
 interface Message {
-  type: "user" | "bot";
-  content:
-    | string
-    | {
-        response: string;
-        suggestions?: string[];
-        codeSnippets?: Array<{
-          title: string;
-          code: string;
-          language: string;
-          explanation?: string;
-        }>;
-        references?: string[];
-      };
-  id?: string;
+  id: string;
+  type: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+  mode?: 'code' | 'email' | 'presentation';
+  codeSnippets?: CodeSnippet[];
+  emailData?: EmailResponse;
+  presentationData?: {
+    title: string;
+    slides: Array<{ title: string; content: string }>;
+  };
 }
 
-const CodeBlock: React.FC<{
-  code: string;
-  language: string;
-}> = ({ code, language }) => {
-  const copyToClipboard = async () => {
-    try {
-      await navigator.clipboard.writeText(code);
-    } catch (err) {
-      console.error("Failed to copy code:", err);
-    }
-  };
-
-  return (
-    <div className="relative group">
-      <button
-        onClick={copyToClipboard}
-        className="absolute right-2 top-2 p-2 rounded-lg bg-[#ffffff0f] 
-                   opacity-0 group-hover:opacity-100 transition-opacity"
-      >
-        <Clipboard className="h-4 w-4" />
-      </button>
-      <SyntaxHighlighter
-        language={language.toLowerCase()}
-        style={oneDark}
-        customStyle={{
-          margin: 0,
-          borderRadius: "0.5rem",
-          background: "#2A2B2D",
-        }}
-      >
-        {code}
-      </SyntaxHighlighter>
-    </div>
-  );
-};
-
-// Add these helper functions after the imports and before the component definitions
-
-const isEmailContent = (content: string | object): boolean => {
-  if (typeof content !== 'string') return false;
-  
-  // Check for common email markers
-  const hasEmailMarkers = [
-    'From:',
-    'Subject:',
-    'Email:',
-    'Role:',
-    'Company:'
-  ].some(marker => content.includes(marker));
-
-  const hasEmailStructure = content.split('\n').length >= 3 && 
-                          content.includes('@') &&
-                          hasEmailMarkers;
-
-  return hasEmailStructure;
-};
-
-const isPresentationContent = (content: string | object): boolean => {
-  if (typeof content !== 'string') return false;
-
-  // Check for presentation markers
-  const hasPresentationMarkers = [
-    'Title:',
-    'Slide',
-    '\n\n'
-  ].some(marker => content.includes(marker));
-
-  const hasSlideStructure = content.split('\n\n').length >= 2 &&
-                           /Slide \d+:/.test(content) &&
-                           hasPresentationMarkers;
-
-  return hasSlideStructure;
-};
-
-// First, add this new component above your ChatInterface component
-const FormattedResponse: React.FC<{ content: string }> = ({ content }) => {
-  // Extract overview from content by removing code blocks
-  const getOverview = (text: string) => {
-    // Remove code blocks (text between ``` marks)
-    const withoutCode = text.replace(/```[\s\S]*?```/g, "");
-    // Split into sections
-    return withoutCode.includes("#")
-      ? withoutCode.split("\n").reduce((acc, line) => {
-          if (line.startsWith("#")) {
-            acc.push({ type: "header", content: line.replace(/^#+ /, "") });
-          } else if (line.startsWith("•")) {
-            acc.push({ type: "bullet", content: line.substring(2) });
-          } else if (line.trim()) {
-            acc.push({ type: "text", content: line });
-          }
-          return acc;
-        }, [] as Array<{ type: string; content: string }>)
-      : [{ type: "text", content: withoutCode }];
-  };
-
-  const overviewSections = getOverview(content);
-
-  return (
-    <div className="prose prose-invert max-w-none">
-      {overviewSections.map((section, index) => {
-        switch (section.type) {
-          case "header":
-            return (
-              <h3
-                key={index}
-                className="text-lg font-semibold text-white mb-3 mt-6 first:mt-0"
-              >
-                {section.content}
-              </h3>
-            );
-          case "bullet":
-            return (
-              <div key={index} className="flex items-start space-x-2 mb-2">
-                <span className="text-[#8AB4F8] mt-1">•</span>
-                <p className="text-[#ffffffcc]">{section.content}</p>
-              </div>
-            );
-          default:
-            return (
-              <p
-                key={index}
-                className="text-[#ffffffcc] mb-4 leading-relaxed whitespace-pre-wrap"
-              >
-                {section.content}
-              </p>
-            );
-        }
-      })}
-    </div>
-  );
-};
-
-const getWelcomeMessage = (featureId: string, userName: string) => {
-  const greetings = ["Hey there", "Welcome", "Hi", "Hello", "Great to see you"];
-  const greeting = greetings[Math.floor(Math.random() * greetings.length)];
-
-  const messages = {
-    email: [
-      `${greeting} ${userName}! Ready to craft some powerful emails together? I'll help you write professional and impactful messages that get results. 💌`,
-      `${greeting}! I'm your email writing companion, ${userName}. Let's create emails that stand out and make an impression. ✨`,
-      `Welcome aboard ${userName}! Together we'll transform your ideas into compelling emails that get your message across perfectly. 📧`,
-    ],
-    presentation: [
-      `${greeting} ${userName}! Let's create a presentation that will captivate your audience. First, tell me who we're presenting to! 🎯`,
-      `Ready to make an impact, ${userName}? Let's design a presentation that will wow your audience. Just select your target audience to begin! 🎨`,
-      `${greeting}! Together we'll craft a powerful presentation that tells your story, ${userName}. Choose your audience and let's begin! ✨`,
-    ],
-    codeAssist: null, // Set to null to prevent welcome message
-  };
-
-  // For code assist, return empty string to prevent message
-  if (featureId === "codeAssist") {
-    return "";
-  }
-
-  const featureMessages =
-    messages[featureId as keyof typeof messages] || messages.codeAssist;
-  return featureMessages
-    ? featureMessages[Math.floor(Math.random() * featureMessages.length)]
-    : "";
-};
+type ActiveMode = 'code' | 'email' | 'presentation';
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ userInfo }) => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      type: "bot",
-      content: `Hello ${userInfo.name}, I'm here to help you create professional presentations and emails also assit with codin tailored to your needs.`,
-      id: "initial-message",
-    },
-  ]);
-  const [selectedFeature, setSelectedFeature] = useState<string | null>(
-    "codeAssist"
-  );
-  const [selectedAudience, setSelectedAudience] = useState<string | null>(null);
-  const [inputValue, setInputValue] = useState("");
-  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
-  const [isModifying, setIsModifying] = useState(false);
+  const navigate = useNavigate();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [activeMode, setActiveMode] = useState<ActiveMode>('code');
+  const [codeAssistMode, setCodeAssistMode] = useState<CodeAssistMode>('chat');
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
+  const [screenAnalysis, setScreenAnalysis] = useState<ScreenAnalysis | null>(null);
+  const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [speechService] = useState(() => new SpeechRecognitionService());
-  const [showAlert, setShowAlert] = useState(false);
-  const [pendingFeature, setPendingFeature] = useState<string | null>(null);
-  const [showError, setShowError] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [voiceAssistantActive, setVoiceAssistantActive] = useState(false);
-  const [currentVoiceMessage, setCurrentVoiceMessage] = useState("");
-  const [codeAssistMode, setCodeAssistMode] = useState<CodeAssistMode>("chat");
-  const [isVoiceModeActive, setIsVoiceModeActive] = useState(false);
-  const [voiceConfig] = useState({
-    rate: 1,
-    pitch: 1,
-    voice: 0,
-  });
-  const [hasStartedChat, setHasStartedChat] = useState(false);
-  const [screenAnalysis, setScreenAnalysis] = useState<ScreenAnalysis | null>(
-    null
-  );
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [showApiKeyPrompt, setShowApiKeyPrompt] = useState(false);
+  const [showStopDialog, setShowStopDialog] = useState(false);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const imageProcessorRef = useRef<ImageProcessorMethods>(null);
 
-  const handleAnalysisComplete = useCallback((analysis: ScreenAnalysis) => {
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Check API keys on mount
+  useEffect(() => {
+    if (!hasValidApiKeys()) {
+      setShowApiKeyPrompt(true);
+    }
+  }, []);
+
+  const handleRefreshScreenCapture = useCallback(async () => {
+    if (imageProcessorRef.current) {
+      try {
+        await imageProcessorRef.current.processFrameManually();
+      } catch (error) {
+        console.error('Failed to refresh screen capture:', error);
+      }
+    }
+  }, []);
+
+  const handleScreenAnalysis = useCallback((analysis: ScreenAnalysis) => {
     setScreenAnalysis(analysis);
   }, []);
 
-  const handleVoiceResponse = (message: Message) => {
-    if (voiceAssistantActive && message.type === "bot") {
-      let textToSpeak = "";
-
-      if (typeof message.content === "string") {
-        textToSpeak = message.content;
-      } else {
-        textToSpeak = message.content.response;
-
-        if (message.content.codeSnippets?.length) {
-          textToSpeak +=
-            " I've also provided some code snippets that might help.";
-        }
-
-        if (message.content.suggestions?.length) {
-          textToSpeak +=
-            " Here are some best practices to consider: " +
-            message.content.suggestions.join(". ");
-        }
-      }
-
-      setCurrentVoiceMessage(textToSpeak);
-    }
-  };
-
-  const features = [
-    { id: "codeAssist", icon: Code, label: "Code Assistant" },
-    { id: "email", icon: Mail, label: "Generate Email" },
-    { id: "presentation", icon: FileText, label: "Create Presentation" },
-  ];
-
-  const audiences = [
-    { id: "students", icon: GraduationCap, label: "Students" },
-    { id: "clients", icon: Users, label: "Clients" },
-    { id: "companies", icon: Building2, label: "Companies" },
-    { id: "investors", icon: Briefcase, label: "Investors" },
-  ];
-
-  // Update the handleFeatureSelect function
-  const handleFeatureSelect = (featureId: string) => {
-    // Check if screen sharing is active and switching away from codeAssist
-    if (
-      isScreenSharing &&
-      selectedFeature === "codeAssist" &&
-      featureId !== "codeAssist"
-    ) {
-      setPendingFeature(featureId);
-      setShowAlert(true);
-    } else {
-      switchFeature(featureId);
-    }
-  };
-
-  // Add this new function to handle feature switching
-  const switchFeature = (featureId: string) => {
-    setSelectedFeature(featureId);
-    setSelectedAudience(null);
-    setHasStartedChat(false);
-    setIsVoiceModeActive(false);
-    if (featureId !== "codeAssist") {
-      setMessages([
-        {
-          type: "bot",
-          content: getWelcomeMessage(featureId, userInfo.name),
-          id: `welcome-${Date.now()}`,
-        },
-      ]);
-    } else {
-      setMessages([]);
-    }
-
-    setSelectedMessage(null);
-    setIsModifying(false);
-    setInputValue("");
-  };
-
-  const handleAudienceSelect = (audienceId: string) => {
-    setSelectedAudience(audienceId);
-  };
-
-  // Update the handleSubmit function
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputValue.trim()) return;
-
-    if (isModifying) {
-      if (selectedFeature === "email") {
-        await handleModifyEmail(inputValue);
-      } else if (selectedFeature === "presentation") {
-        await handleModifyPresentation(inputValue);
-      }
-      // Reset modification mode after handling
-      setIsModifying(false);
-      setSelectedMessage(null);
-      setInputValue("");
-      return;
-    }
-
-    // Clear textarea height and value
-    const textarea = document.querySelector("textarea");
-    if (textarea) {
-      textarea.style.height = "44px"; // Reset to min-height
-      textarea.style.overflowY = "hidden";
-    }
-
-    // Reset input value
-    setInputValue("");
-
-    // Set hasStartedChat to true when user sends first message
-    setHasStartedChat(true);
-
-    try {
-      const timestamp = Date.now();
-      const userMessage = {
-        type: "user" as const,
-        content: inputValue,
-        id: `user-${timestamp}`,
-      };
-      setMessages((prev) => [...prev, userMessage]);
-
-      // Add loading message
-      const loadingId = `loading-${timestamp}`;
-      setMessages((prev) => [
-        ...prev,
-        {
-          type: "bot",
-          content: "loading",
-          id: loadingId,
-        },
-      ]);
-
-      if (!selectedFeature) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            type: "bot",
-            content:
-              "Please select a feature (Email or Presentation) from the sidebar first.",
-            id: `bot-${timestamp + 1}`,
-          },
-        ]);
-        setInputValue("");
-        return;
-      }
-
-      if (selectedFeature === "email") {
-        try {
-          const emailMetadata = {
-            sender: {
-              name: userInfo.name,
-              role: userInfo.jobRole,
-              company: userInfo.company,
-              email: userInfo.email,
-            },
-          };
-
-          const result = await generateEmail(
-            inputValue,
-            emailMetadata
-          );
-      
-
-          if (result) {
-            const formattedEmail = `From: ${userInfo.name}
-            Role: ${userInfo.jobRole}
-            Company: ${userInfo.company}
-            Email: ${userInfo.email}
-
-            Subject: ${result.subject}
-
-            ${result.content}`;
-
-            setMessages((prev) => [
-              ...prev,
-              {
-                type: "bot",
-                content: formattedEmail,
-                id: `email-${Date.now()}`,
-              },
-            ]);
-          }
-        } catch (error) {
-          console.error("API Error:", error);
-          setMessages((prev) => [
-            ...prev,
-            {
-              type: "bot",
-              content: "Sorry, there was an error generating your content.",
-              id: `error-${Date.now()}`,
-            },
-          ]);
-        }
-      } else if (selectedFeature === "presentation") {
-        if (!selectedAudience) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              type: "bot",
-              content: "Please select a target audience for your presentation.",
-              id: Date.now().toString(),
-            },
-          ]);
-          setInputValue("");
-          return;
-        }
-
-        try {
-          const result = await generatePresentation(
-            inputValue,
-            selectedAudience,
-            "presentation"
-          );
-
-          if (result) {
-            const formattedPresentation = `Title: ${
-              result.title
-            }\n\n${result.slides
-              .map(
-                (slide, index) =>
-                  `Slide ${index + 1}: ${slide.title}\n${slide.content}`
-              )
-              .join("\n\n")}`;
-
-            setMessages((prev) => [
-              ...prev,
-              {
-                type: "bot",
-                content: formattedPresentation,
-                id: `presentation-${Date.now()}`,
-              },
-            ]);
-          }
-        } catch (error) {
-          console.error("API Error:", error);
-          setMessages((prev) => [
-            ...prev,
-            {
-              type: "bot",
-              content:
-                "Sorry, there was an error generating your presentation.",
-              id: `error-${Date.now()}`,
-            },
-          ]);
-        }
-      } else if (selectedFeature === "codeAssist") {
-        try {
-          const result = await generateCodeAssistance(
-            inputValue,
-            isScreenSharing,
-            mediaStream
-          );
-
-          // Parse the response if it's a string
-          let parsedContent;
-          if (typeof result === "string") {
-            try {
-              parsedContent = JSON.parse(result);
-            } catch (parseError) {
-              console.error("Error parsing response:", parseError);
-              parsedContent = { response: result };
-            }
-          } else {
-            parsedContent = result;
-          }
-
-          setMessages((prev) => [
-            ...prev,
-            {
-              type: "bot",
-              content: {
-                response: parsedContent.response,
-                suggestions: parsedContent.suggestions || [],
-                codeSnippets: parsedContent.codeSnippets || [],
-                references: parsedContent.references || [],
-              },
-              id: `code-${Date.now()}`,
-            },
-          ]);
-        } catch (error) {
-          console.error("API Error:", error);
-          setMessages((prev) => [
-            ...prev,
-            {
-              type: "bot",
-              content: "Sorry, there was an error processing your request.",
-              id: `error-${Date.now()}`,
-            },
-          ]);
-        }
-      }
-
-      setMessages((prev) => prev.filter((msg) => msg.id !== loadingId));
-      const botMessage = messages.find((msg) => msg.type === "bot");
-      if (botMessage) {
-        handleVoiceResponse(botMessage);
-      }
-    } catch (error) {
-      console.error("API Error:", error);
-      setMessages((prev) => [
-        ...prev.filter((msg) => !msg.id?.startsWith("loading")),
-        {
-          type: "bot",
-          content: "Sorry, there was an error processing your request.",
-          id: `error-${Date.now()}`,
-        },
-      ]);
-    } finally {
-      setInputValue("");
-    }
-
-    setInputValue("");
-  };
-
-// Update the handleModifyEmail function
-const handleModifyEmail = async (modificationPrompt: string) => {
-  if (!selectedMessage || !selectedMessage.content) return;
-
-  try {
-    const emailMetadata: EmailMetadata = {
-      sender: {
-        name: userInfo.name,
-        role: userInfo.jobRole,
-        company: userInfo.company,
-        email: userInfo.email,
-      }
-    };
-
-    const result = await generateEmail(
-      "",
-      emailMetadata,
-      {
-        originalContent: selectedMessage.content as string,
-        modificationRequest: modificationPrompt
-      }
-    );
-
-    if (result) {
-      // Replace the selected message with modified version and add status indicator
-      setMessages(prev => prev.map(msg => 
-        msg.id === selectedMessage.id ? {
-          ...msg,
-          content: `From: ${userInfo.name}
-Role: ${userInfo.jobRole}
-Company: ${userInfo.company}
-Email: ${userInfo.email}
-
-Subject: ${result.subject}
-
-${result.content}`,
-          id: `${msg.id}-modified-${Date.now()}`
-        } : msg
-      ));
-    }
-  } catch (error) {
-    console.error("Email modification error:", error);
-    setMessages(prev => [...prev, {
-      type: "bot",
-      content: `Error modifying email: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      id: `error-${Date.now()}`
-    }]);
-  } finally {
-    setIsModifying(false);
-    setSelectedMessage(null);
-    setInputValue("");
-  }
-};
-
-  const handleModifyPresentation = async (modificationPrompt: string) => {
-    if (!selectedMessage || !selectedMessage.content) return;
-
-    const timestamp = Date.now();
-    const userModRequest = {
-      type: "user" as const,
-      content: `Modification request: ${modificationPrompt}`,
-      id: `mod-request-${timestamp}`,
-    };
-    setMessages((prev) => [...prev, userModRequest]);
-
-    try {
-      const result = await generatePresentation(
-        modificationPrompt,
-        selectedAudience || "general",
-        "presentation",
-        {
-          originalContent:
-            typeof selectedMessage.content === "string"
-              ? selectedMessage.content
-              : "",
-          modificationRequest: modificationPrompt,
-        }
-      );
-
-      if (result) {
-        const formattedPresentation = `Title: ${result.title}\n\n${result.slides
-          .map(
-            (slide, index) =>
-              `Slide ${index + 1}: ${slide.title}\n${slide.content}`
-          )
-          .join("\n\n")}`;
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            type: "bot",
-            content: formattedPresentation,
-            id: `mod-presentation-${Date.now()}`,
-          },
-        ]);
-      }
-    } catch (error) {
-      console.error("Modification error:", error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          type: "bot",
-          content: "Sorry, there was an error modifying the presentation.",
-          id: `mod-error-${Date.now()}`,
-        },
-      ]);
-    }
-
-    setIsModifying(false);
-    setSelectedMessage(null);
-    setInputValue("");
-  };
-
-  // Update the startScreenShare function:
   const startScreenShare = async () => {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          displaySurface: "window",
-          logicalSurface: true,
-          cursor: "always",
-          // Specifically request system-level windows
-          systemAudio: "include",
-          surfaceSwitching: "include",
-          selfBrowserSurface: "exclude",
-        } as MediaTrackConstraints,
-        audio: {
-          // Include system audio
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 44100,
-        },
+        video: { mediaSource: 'screen' },
+        audio: false
       });
-
-      // Check if we got a window capture
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) {
-        const settings = videoTrack.getSettings();
-        console.log("Capture settings:", settings);
-
-        // Add track ended listener
-        videoTrack.addEventListener("ended", () => {
-          stopScreenShare();
-        });
-      }
-
+      
       setMediaStream(stream);
       setIsScreenSharing(true);
+      setCodeAssistMode('screen');
+      
+      stream.getVideoTracks()[0].addEventListener('ended', () => {
+        stopScreenShare();
+      });
     } catch (error) {
-      console.error("Error sharing screen:", error);
-      // Show a more helpful error message
-      if ((error as Error).name === "NotAllowedError") {
-        setErrorMessage(
-          "Please allow screen sharing permissions to share VS Code or other windows."
-        );
-      } else {
-        setErrorMessage(
-          "Error sharing screen. Please make sure you have screen sharing permissions enabled."
-        );
-      }
-      setShowError(true);
+      console.error('Error starting screen share:', error);
     }
   };
 
   const stopScreenShare = () => {
     if (mediaStream) {
-      mediaStream.getTracks().forEach((track) => track.stop());
+      mediaStream.getTracks().forEach(track => track.stop());
       setMediaStream(null);
     }
     setIsScreenSharing(false);
+    setScreenAnalysis(null);
+    setCodeAssistMode('chat');
   };
 
-  const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const submitButtonRef = useRef<HTMLButtonElement>(null);
-  const toggleVoiceInput = () => {
-    if (isListening || voiceAssistantActive) {
-      speechService.stopListening();
-      setIsListening(false);
-      setVoiceAssistantActive(false);
-      if (messageTimeoutRef.current) {
-        clearTimeout(messageTimeoutRef.current);
-        messageTimeoutRef.current = null;
-      }
-      setInputValue("");
+  const startVoiceMode = () => {
+    setIsVoiceMode(true);
+    setCodeAssistMode('voice');
+  };
+
+  const stopVoiceMode = () => {
+    setIsVoiceMode(false);
+    setIsListening(false);
+    setCodeAssistMode('chat');
+  };
+
+  const handleVoiceModeToggle = () => {
+    if (isVoiceMode) {
+      setShowStopDialog(true);
     } else {
-      setVoiceAssistantActive(false);
-      let currentInput = "";
-      const SUBMIT_DELAY = 3000;
-
-      speechService.startListening(
-        (text) => {
-          currentInput = text;
-          setInputValue(text);
-
-          // Clear any existing timeout
-          if (messageTimeoutRef.current) {
-            clearTimeout(messageTimeoutRef.current);
-          }
-        },
-        () => {
-          // Set a single timeout for submission
-          if (currentInput.trim()) {
-            messageTimeoutRef.current = setTimeout(() => {
-              setIsListening(false);
-              const submitButton = document.querySelector(
-                'button[type="submit"]'
-              );
-              if (submitButton) {
-                (submitButton as HTMLButtonElement).click();
-              }
-            }, SUBMIT_DELAY);
-          }
-        }
-      );
-      setIsListening(true);
+      startVoiceMode();
     }
   };
 
-  const handleAlertConfirm = () => {
-    if (pendingFeature) {
-      stopScreenShare();
-      switchFeature(pendingFeature);
+  const confirmStopVoiceMode = () => {
+    stopVoiceMode();
+    setShowStopDialog(false);
+  };
+
+  const handleSpeechResult = (transcript: string) => {
+    if (transcript.trim()) {
+      const newMessage: Message = {
+        id: Date.now().toString(),
+        type: 'user',
+        content: transcript,
+        timestamp: new Date(),
+        mode: activeMode
+      };
+      setMessages(prev => [...prev, newMessage]);
     }
-    setShowAlert(false);
-    setPendingFeature(null);
   };
 
-  const handleAlertCancel = () => {
-    setShowAlert(false);
-    setPendingFeature(null);
+  const handleVoiceResponse = (response: string) => {
+    const assistantMessage: Message = {
+      id: Date.now().toString(),
+      type: 'assistant',
+      content: response,
+      timestamp: new Date(),
+      mode: activeMode
+    };
+    setMessages(prev => [...prev, assistantMessage]);
   };
 
-  const handleUseAsPrompt = (text: string) => {
-    // Format the text by cleaning and normalizing
-    const formattedText = text
-      .split("\n")
-      .map((line) => {
-        return line
-          .replace(/[^\w\s.!?,'"()-]/g, " ")
-          .replace(/[←→↑↓≤≥«»■●◆□△▲▼→←↔↕⇄⇅≈~]/g, "")
-          .replace(/\s{2,}/g, " ")
-          .trim();
-      })
-      .filter((line) => {
-        const lowercaseLine = line.toLowerCase();
-        return (
-          line.length > 0 &&
-          !lowercaseLine.includes("lines:") &&
-          !lowercaseLine.includes("undefined") &&
-          !lowercaseLine.includes("null") &&
-          !lowercaseLine.includes("[object") &&
-          !lowercaseLine.match(/^\d+$/) &&
-          !lowercaseLine.match(/^[\W_]+$/) &&
-          !lowercaseLine.match(/^v\s*$/i) &&
-          !lowercaseLine.match(/^[<>=\-—_|]+$/)
+  const handleModeSelect = (mode: CodeAssistMode) => {
+    setCodeAssistMode(mode);
+    if (mode === 'screen') {
+      startScreenShare();
+    } else if (mode === 'voice') {
+      startVoiceMode();
+    } else {
+      if (isScreenSharing) stopScreenShare();
+      if (isVoiceMode) stopVoiceMode();
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputValue.trim() || isLoading) return;
+
+    // Check API keys before processing
+    if (!hasValidApiKeys()) {
+      setShowApiKeyPrompt(true);
+      return;
+    }
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      type: 'user',
+      content: inputValue,
+      timestamp: new Date(),
+      mode: activeMode
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInputValue('');
+    setIsLoading(true);
+
+    try {
+      let assistantMessage: Message;
+
+      if (activeMode === 'code') {
+        const previousSnippets = messages
+          .filter(msg => msg.type === 'assistant' && msg.codeSnippets)
+          .flatMap(msg => msg.codeSnippets || []);
+
+        const response = await generateCodeAssistance(
+          inputValue,
+          isScreenSharing,
+          mediaStream,
+          { previousSnippets }
         );
-      })
-      .join("\n")
-      .replace(/\n\s*\n\s*\n/g, "\n\n")
-      .trim();
 
-    // Set the formatted text as input value
-    setInputValue(formattedText);
+        assistantMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: response.response,
+          timestamp: new Date(),
+          mode: 'code',
+          codeSnippets: response.codeSnippets
+        };
+      } else if (activeMode === 'email') {
+        const emailResponse = await generateEmail(inputValue, {
+          sender: {
+            name: userInfo.name,
+            email: userInfo.email,
+            company: userInfo.company,
+            role: userInfo.jobRole
+          }
+        });
 
-    // Use setTimeout to ensure state update has completed
-    setTimeout(() => {
-      const textarea = document.querySelector("textarea");
-      if (textarea) {
-        // Reset height first
-        textarea.style.height = "auto";
+        assistantMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: `I've generated an email for you:`,
+          timestamp: new Date(),
+          mode: 'email',
+          emailData: emailResponse
+        };
+      } else {
+        const presentationResponse = await generatePresentation(
+          inputValue,
+          'companies',
+          'presentation'
+        );
 
-        // Force a reflow
-        void textarea.offsetHeight;
-
-        // Set new height based on scrollHeight
-        const newHeight = Math.min(textarea.scrollHeight, 300);
-        textarea.style.height = `${newHeight}px`;
-
-        // Set overflow based on content height
-        textarea.style.overflowY =
-          textarea.scrollHeight > 300 ? "auto" : "hidden";
-
-        // Focus and scroll into view
-        textarea.focus();
-        textarea.scrollIntoView({ behavior: "smooth", block: "center" });
-
-        // Select the text for easy editing
-        (textarea as HTMLTextAreaElement).select();
+        assistantMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: `I've created a presentation for you:`,
+          timestamp: new Date(),
+          mode: 'presentation',
+          presentationData: presentationResponse
+        };
       }
-    }, 0);
+
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error: any) {
+      console.error('Error generating response:', error);
+      
+      let errorMessage = 'Sorry, I encountered an error. Please try again.';
+      if (error.message.includes('API key not configured')) {
+        setShowApiKeyPrompt(true);
+        errorMessage = 'Please configure your API keys to use this feature.';
+      }
+
+      const errorResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: errorMessage,
+        timestamp: new Date(),
+        mode: activeMode
+      };
+      setMessages(prev => [...prev, errorResponse]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleVoiceModeStart = useCallback(() => {
-    setIsVoiceModeActive(true);
-  }, []);
-
-  const cancelModification = () => {
-    setIsModifying(false);
-    setSelectedMessage(null);
-    setInputValue("");
-  };
-
-  const toggleModificationMode = (message: Message) => {
-    setSelectedMessage(message);
-    setIsModifying(true);
-  };
-
-  // Update the main container layout
-  return (
-    <div className="flex flex-col h-screen bg-[#0a0a0f]">
-      {" "}
-      {/* Changed background */}
-      <Header isFormCompleted={!!userInfo} />
-      <main className="flex-1 p-2 md:p-3 lg:p-4 overflow-hidden mt-20">
-        <div className="flex flex-col lg:flex-row gap-3 h-[calc(100vh-7rem)] max-w-[1800px] mx-auto w-full">
-          {/* Main Chat Section */}
-          <div
-            className="flex-1 backdrop-blur-lg bg-gradient-to-b from-black/40 to-[#0a0a0f]/90 
-                     rounded-2xl overflow-hidden flex flex-col md:flex-row min-h-0 
-                     border border-purple-900/30 relative"
-          >
-            {/* Add animated background */}
-            {/* <div className="absolute inset-0 z-0">
-              <div className="absolute inset-0" style={{
-                backgroundImage: `linear-gradient(#2a1458 1px, transparent 1px),
-                               linear-gradient(90deg, #2a1458 1px, transparent 1px)`,
-                backgroundSize: '50px 50px',
-                opacity: 0.1
-              }}></div>
-            </div> */}
-
-            {/* Sidebar */}
-            <div
-              className="w-full md:w-[280px] backdrop-blur-2xl bg-black/20 
-                      border-r border-purple-900/30 flex flex-col shrink-0 z-10"
-            >
-              <div className="p-6">
-                <div className="mb-8">
-                  <h1
-                    className="text-4xl font-bold bg-clip-text text-transparent 
-                             bg-gradient-to-r from-purple-400 via-pink-500 to-purple-600"
-                  >
-                    Budy-X
-                  </h1>
-                  <p className="text-gray-300 mt-2">Smarter Than Your Ex 💀</p>
-                </div>
-
-                <div className="space-y-8">
-                  <div>
-                    <h2 className="text-gray-400 font-medium mb-3 flex items-center text-sm uppercase tracking-wider">
-                      <MessageSquare className="h-4 w-4 mr-2" />
-                      Features
-                    </h2>
-                    <div className="space-y-1">
-                      {features.map((feature) => (
-                        <button
-                          key={feature.id}
-                          onClick={() => handleFeatureSelect(feature.id)}
-                          data-active={selectedFeature === feature.id}
-                          className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg 
-                               transition-all duration-300 text-gray-400 
-                               hover:bg-purple-600/20 hover:text-white
-                               data-[active=true]:bg-gradient-to-r 
-                               data-[active=true]:from-purple-600/20 
-                               data-[active=true]:to-pink-600/20 
-                               data-[active=true]:text-white
-                               data-[active=true]:shadow-[0_0_20px_rgba(147,51,234,0.2)]"
-                        >
-                          <feature.icon className="h-5 w-5 flex-shrink-0" />
-                          <span className="text-sm">{feature.label}</span>
-                        </button>
-                      ))}
-                    </div>
+  const renderMessage = (message: Message) => {
+    const isUser = message.type === 'user';
+    
+    return (
+      <div
+        key={message.id}
+        className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}
+      >
+        <div
+          className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+            isUser
+              ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+              : 'bg-[#2A2B2D] text-white border border-[#ffffff0f]'
+          }`}
+        >
+          <div className="text-sm">{message.content}</div>
+          
+          {message.codeSnippets && message.codeSnippets.length > 0 && (
+            <div className="mt-4 space-y-3">
+              {message.codeSnippets.map((snippet, index) => (
+                <div key={index} className="space-y-2">
+                  <div className="text-xs text-gray-400 font-medium">
+                    {snippet.title}
                   </div>
-
-                  {selectedFeature === "presentation" && (
-                    <div>
-                      <h2 className="text-gray-400 font-medium mb-3 flex items-center text-sm uppercase tracking-wider">
-                        <Users className="h-4 w-4 mr-2" />
-                        Target Audience
-                      </h2>
-                      <div className="space-y-1">
-                        {audiences.map((audience) => (
-                          <button
-                            key={audience.id}
-                            onClick={() => handleAudienceSelect(audience.id)}
-                            data-active={selectedAudience === audience.id}
-                            className="w-full flex items-center space-x-3 px-4 py-3 
-                                 rounded-lg transition-all duration-300 
-                                 text-gray-400 hover:bg-purple-600/20 hover:text-white
-                                 data-[active=true]:bg-gradient-to-r 
-                                 data-[active=true]:from-purple-600/20 
-                                 data-[active=true]:to-pink-600/20 
-                                 data-[active=true]:text-white"
-                          >
-                            <audience.icon className="h-5 w-5 flex-shrink-0" />
-                            <span className="text-sm">{audience.label}</span>
-                          </button>
-                        ))}
-                      </div>
+                  <CodeBlock code={snippet.code} language={snippet.language} />
+                  {snippet.explanation && (
+                    <div className="text-xs text-gray-300 mt-2 p-3 bg-[#ffffff0a] rounded-lg">
+                      {snippet.explanation}
                     </div>
                   )}
                 </div>
+              ))}
+            </div>
+          )}
+
+          {message.emailData && (
+            <div className="mt-4 space-y-3">
+              <div className="bg-[#ffffff0a] rounded-lg p-4 border border-[#ffffff1a]">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm font-medium text-purple-300">
+                    Subject: {message.emailData.subject}
+                  </div>
+                  <SendEmailButton
+                    emailContent={message.emailData.content}
+                    subject={message.emailData.subject}
+                    senderEmail={userInfo.email}
+                  />
+                </div>
+                <div className="text-sm text-gray-300 whitespace-pre-wrap">
+                  {message.emailData.content}
+                </div>
               </div>
             </div>
+          )}
 
-            {/* Chat Area */}
-            <div className="flex-1 flex flex-col min-w-0 z-10">
-              {selectedFeature === "codeAssist" && !hasStartedChat ? (
-                // Show CodeAssistModeSelector only when codeAssist is selected and chat hasn't started
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="max-w-[900px] w-full mx-auto px-4">
-                    <CodeAssistModeSelector
-                      currentMode={codeAssistMode}
-                      onModeSelect={(mode) => {
-                        setCodeAssistMode(mode);
-                        if (mode === "voice") {
-                          handleVoiceModeStart();
-                        } else if (isScreenSharing && mode !== "screen") {
-                          stopScreenShare();
-                        }
-                      }}
-                      startScreenShare={startScreenShare}
-                    />
-                  </div>
-                </div>
-              ) : (
-                // Show messages for all features or when chat has started
-                <div
-                  className={`p-3 md:p-6 overflow-y-auto flex-1 space-y-4 ${styles.chatScroll}`}
-                >
-                  {messages.map((message) => (
-                    <div key={message.id} className="flex flex-col max-w-full">
-                      {/* Only render the message container if there's content to show */}
-                      {(message.type === "user" || 
-                        message.content === "loading" || 
-                        (typeof message.content === "string" && 
-                         !isEmailContent(message.content) && 
-                         !isPresentationContent(message.content)) || 
-                        typeof message.content === "object") && (
-                        <div className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
-                          <div className={`max-w-[95%] md:max-w-[85%] lg:max-w-[80%] rounded-2xl 
-                                          px-4 md:px-6 py-3 md:py-4 shadow-lg ${
-                                            message.type === "user"
-                                              ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white"
-                                              : "backdrop-blur-lg bg-white/5 border border-purple-900/30 text-white"
-                                          }`}>
-                            {message.content === "loading" ? (
-                              <LoadingDots />
-                            ) : typeof message.content === "string" ? (
-                              !isEmailContent(message.content) && (
-                                <pre className="whitespace-pre-line">
-                                  {message.content}
-                                </pre>
-                              )
-                            ) : (
-                              // Complex message content (code, suggestions, etc.)
-                              <div className="space-y-6">
-                                {/* Main Response */}
-                                <div
-                                  className="bg-gradient-to-br from-purple-900/20 to-pink-900/20 
-                                              backdrop-blur-sm rounded-lg p-4 
-                                              border border-purple-900/30 
-                                              shadow-[0_0_15px_rgba(147,51,234,0.1)]"
-                                >
-                                  <FormattedResponse
-                                    content={message.content.response}
-                                  />
-                                </div>
-
-                                {/* Code Snippets */}
-                                {message.content.codeSnippets?.map(
-                                  (snippet, index) => (
-                                    <div
-                                      key={index}
-                                      className="rounded-lg overflow-hidden bg-[#2A2B2D]"
-                                    >
-                                      <div className="px-4 py-2 bg-[#202124] border-b border-[#ffffff0f] flex justify-between items-center">
-                                        <h3 className="text-sm font-medium text-white">
-                                          {snippet.title}
-                                        </h3>
-                                        <div className="text-xs text-[#ffffff66]">
-                                          {snippet.language}
-                                        </div>
-                                      </div>
-                                      <div className="p-4">
-                                        <CodeBlock
-                                          code={snippet.code}
-                                          language={snippet.language}
-                                        />
-                                        {snippet.explanation && (
-                                          <p className="mt-4 text-sm text-[#ffffff99]">
-                                            {snippet.explanation}
-                                          </p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )
-                                )}
-
-                                {/* Suggestions */}
-                                {message.content.suggestions &&
-                                  message.content.suggestions.length > 0 && (
-                                    <div className="rounded-lg bg-[#2A2B2D]/50 p-4">
-                                      <h3 className="text-sm font-medium text-white mb-2">
-                                        Best Practices
-                                      </h3>
-                                      <ul className="list-disc list-inside space-y-1">
-                                        {message.content.suggestions.map(
-                                          (suggestion, index) => (
-                                            <li
-                                              key={index}
-                                              className="text-sm text-[#ffffff99]"
-                                            >
-                                              {suggestion}
-                                            </li>
-                                          )
-                                        )}
-                                      </ul>
-                                    </div>
-                                  )}
-
-                                {/* References */}
-                                {(message.content.references ?? []).length >
-                                  0 && (
-                                  <div className="mt-4 border-t border-[#ffffff0f] pt-4">
-                                    <h3 className="text-sm font-medium text-white mb-2">
-                                      Additional Resources
-                                    </h3>
-                                    <ul className="space-y-1">
-                                      {message.content.references?.map(
-                                        (ref, index) => (
-                                          <li key={index}>
-                                            <a
-                                              href={ref}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="text-sm text-[#8AB4F8] hover:underline"
-                                            >
-                                              {ref}
-                                            </a>
-                                          </li>
-                                        )
-                                      )}
-                                    </ul>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Email content rendering stays separate */}
-                      {message.type === "bot" && 
-                       typeof message.content === "string" && 
-                       isEmailContent(message.content) && (
-                        <div className="relative bg-white/5 border border-purple-900/30 rounded-2xl overflow-hidden">
-                          {/* Email Header with Send Button and Modified Status */}
-                          <div className="flex justify-between items-center p-4 border-b border-purple-900/30">
-                            <div className="flex items-center gap-3">
-                              <div className="text-white/90">
-                                {message.content.match(/Subject: (.+)/)?.[1] && (
-                                  <h3 className="font-medium">
-                                    {message.content.match(/Subject: (.+)/)?.[1] ?? 'No Subject'}
-                                  </h3>
-                                )}
-                              </div>
-                              {message.id?.includes('-modified-') && (
-                                <span className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded">
-                                  Modified
-                                </span>
-                              )}
-                            </div>
-                            <SendEmailButton
-                              emailContent={message.content}
-                              subject={message.content.match(/Subject: (.+)/)?.[1] ?? 'No Subject'}
-                              senderEmail={userInfo.email}
-                            />
-                          </div>
-                          
-                          {/* Email Content */}
-                          <div className="p-4 text-white/80 leading-relaxed">
-                            <div className="whitespace-pre-line">
-                              {message.content.split('\n\n').slice(1).join('\n\n')}
-                            </div>
-                          </div>
-
-                          {/* Modification Button */}
-                          <div className="px-4 pb-4 flex justify-start">
-                            <button
-                              onClick={() => isModifying ? cancelModification() : toggleModificationMode(message)}
-                              className="text-sm text-[#8AB4F8] hover:text-white transition-colors"
-                            >
-                              {isModifying && selectedMessage?.id === message.id 
-                                ? "Cancel Modification" 
-                                : "Modify Email"}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Add presentation content rendering */}
-                      {message.type === "bot" && 
-                       typeof message.content === "string" && 
-                       isPresentationContent(message.content) && (
-                        <div className="relative bg-white/5 border border-purple-900/30 rounded-2xl overflow-hidden">
-                          <div className="p-4 space-y-6">
-                            {message.content.split('\n\n').map((section, index) => {
-                              if (section.startsWith('Title:')) {
-                                return (
-                                  <h2 key={index} className="text-xl font-semibold text-white">
-                                    {section.replace('Title:', '').trim()}
-                                  </h2>
-                                );
-                              }
-                              
-                              const match = section.match(/^Slide (\d+):\s*(.+?)(?:\n|$)([\s\S]*)/);
-                              if (match) {
-                                const [, slideNum, slideTitle, slideContent] = match;
-                                return (
-                                  <div key={index} className="bg-white/5 rounded-lg p-4">
-                                    <div className="flex items-center justify-between mb-3">
-                                      <h3 className="text-lg font-medium text-white">
-                                        {slideTitle}
-                                      </h3>
-                                      <span className="text-sm text-gray-400">
-                                        Slide {slideNum}
-                                      </span>
-                                    </div>
-                                    <div className="text-white/80 whitespace-pre-line">
-                                      {slideContent.trim()}
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })}
-                          </div>
-
-                          {/* Modification Button */}
-                          <div className="px-4 pb-4 flex justify-start">
-                            <button
-                              onClick={() => isModifying ? cancelModification() : toggleModificationMode(message)}
-                              className="text-sm text-[#8AB4F8] hover:text-white transition-colors"
-                            >
-                              {isModifying && selectedMessage?.id === message.id 
-                                ? "Cancel Modification" 
-                                : "Modify Presentation"}
-                            </button>
-                          </div>
-                        </div>
-                      )}
+          {message.presentationData && (
+            <div className="mt-4 space-y-3">
+              <div className="bg-[#ffffff0a] rounded-lg p-4 border border-[#ffffff1a]">
+                <h3 className="text-lg font-semibold text-purple-300 mb-4">
+                  {message.presentationData.title}
+                </h3>
+                <div className="space-y-4">
+                  {message.presentationData.slides.map((slide, index) => (
+                    <div key={index} className="bg-[#ffffff0a] rounded-lg p-4 border border-[#ffffff1a]">
+                      <h4 className="font-medium text-white mb-2">
+                        Slide {index + 1}: {slide.title}
+                      </h4>
+                      <div className="text-sm text-gray-300 whitespace-pre-wrap">
+                        {slide.content}
+                      </div>
                     </div>
                   ))}
                 </div>
-              )}
-              {/* Input Area */}
-              <div className="border-t border-purple-900/30 bg-black/20 backdrop-blur-lg">
-                <div className="max-w-[900px] w-full p-4">
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      if (isModifying) {
-                        if (selectedFeature === "email") {
-                          handleModifyEmail(inputValue);
-                        } else if (selectedFeature === "presentation") {
-                          handleModifyPresentation(inputValue);
-                        }
-                      } else {
-                        handleSubmit(e);
-                      }
-                    }}
-                    className="max-w-4xl mx-auto"
-                  >
-                    <div className="relative flex items-center">
-                      <textarea
-                        value={inputValue}
-                        onChange={(e) => {
-                          setInputValue(e.target.value);
-                          e.target.style.height = "auto";
-                          const newHeight = Math.min(
-                            e.target.scrollHeight,
-                            300
-                          );
-                          e.target.style.height = `${newHeight}px`;
-                          e.target.style.overflowY =
-                            e.target.scrollHeight > 300 ? "auto" : "hidden";
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            const formEvent = new Event("submit", {
-                              cancelable: true,
-                            });
-                            handleSubmit(
-                              formEvent as unknown as React.FormEvent
-                            );
-                          }
-                        }}
-                        placeholder={
-                          isModifying
-                            ? "Enter your modification request..."
-                            : "Type your email content..."
-                        }
-                        style={{
-                          height: "55px",
-                          minHeight: "44px",
-                          maxHeight: "300px",
-                          resize: "none",
-                          whiteSpace: "pre-wrap",
-                          lineHeight: "1.5",
-                          overflowY: "auto",
-                          fontFamily: "system-ui, -apple-system, sans-serif",
-                          scrollbarWidth: "thin",
-                          scrollbarColor:
-                            "rgba(255, 255, 255, 0.1) transparent",
-                        }}
-                        className="w-full rounded-lg bg-white/5 border border-purple-900/30 
-                                text-white placeholder-gray-400
-                                focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500/50 
-                                transition-all duration-300
-                                px-4 md:px-6 py-3
-                                pr-[144px] md:pr-[156px]"
-                      />
-                      <div className="absolute right-2 flex items-center space-x-1 md:space-x-2">
-                        {selectedFeature === "codeAssist" &&
-                          codeAssistMode === "screen" && (
-                            <button
-                              type="button"
-                              onClick={
-                                isScreenSharing
-                                  ? stopScreenShare
-                                  : startScreenShare
-                              }
-                              className={`p-2 rounded-full transition-colors ${
-                                isScreenSharing
-                                  ? "text-red-500 hover:text-red-400"
-                                  : "text-[#ffffff99] hover:text-[#8AB4F8]"
-                              }`}
-                            >
-                              <Share2 className="h-4 md:h-5 w-4 md:w-5" />
-                            </button>
-                          )}
-                        <button
-                          type="button"
-                          onClick={toggleVoiceInput}
-                          className={`p-2 rounded-full transition-colors relative ${
-                            isListening
-                              ? "text-purple-500"
-                              : "text-[#ffffff99] hover:text-[#8AB4F8]"
-                          }`}
-                        >
-                          {isListening ? (
-                            <>
-                              <div className="absolute inset-0 rounded-full animate-pulse bg-purple-500/20"></div>
-                              <div className="absolute inset-0 rounded-full animate-ping bg-purple-500/20"></div>
-                              <Mic className="h-4 md:h-5 w-4 md:w-5 relative animate-pulse" />
-                            </>
-                          ) : (
-                            <Mic className="h-4 md:h-5 w-4 md:w-5" />
-                          )}
-                        </button>
-                        <button
-                          type="submit"
-                          ref={submitButtonRef}
-                          className="text-gray-400 hover:text-purple-400 p-2 
-                       rounded-full transition-colors duration-300"
-                        >
-                          <Send className="h-4 md:h-5 w-4 md:w-5" />
-                        </button>
-                      </div>
-                    </div>
-                  </form>
-                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Screen Data Section */}
-          {(isScreenSharing || mediaStream) && (
-            <div
-              className="w-full lg:w-[400px] backdrop-blur-lg 
-                    bg-gradient-to-b from-white/10 to-white/5 
-                    rounded-2xl border border-purple-900/30"
-            >
-              {/* Video Container */}
-              <div className="relative h-[150px] md:h-[200px] bg-[#202124] border-b border-[#ffffff1a]">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-xs text-[#ffffff99]">
-                    {screenAnalysis ? (
-                      <div className="flex flex-col items-center space-y-1">
-                        <span>{screenAnalysis.window}</span>
-                        <span>{screenAnalysis.resolution}</span>
-                      </div>
-                    ) : (
-                      "Starting analysis..."
-                    )}
-                  </div>
+          <div className="text-xs text-gray-400 mt-2">
+            {message.timestamp.toLocaleTimeString()}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <Header isFormCompleted={true} />
+      <div className="flex flex-col h-screen bg-[#0a0a0f]">
+        <main className="flex-1 p-2 md:p-3 lg:p-4 overflow-hidden mt-20">
+          <div className="flex flex-col lg:flex-row gap-3 h-[calc(100vh-7rem)] max-w-[1800px] mx-auto w-full">
+            
+            {/* Sidebar */}
+            <div className="w-full md:w-[280px] backdrop-blur-2xl bg-black/20 border-r border-purple-900/30 flex flex-col shrink-0 z-10">
+              <div className="p-6 border-b border-purple-900/30">
+                <h1 className="text-2xl font-bold text-white mb-2">Budy-X</h1>
+                <p className="text-gray-400 text-sm">Smarter Than Your Ex 💀</p>
+              </div>
+
+              <div className="p-4 border-b border-purple-900/30">
+                <h2 className="text-white text-sm font-medium mb-3 flex items-center">
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  FEATURES
+                </h2>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setActiveMode('code')}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-all ${
+                      activeMode === 'code'
+                        ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30'
+                        : 'text-gray-300 hover:bg-purple-600/10 hover:text-white'
+                    }`}
+                  >
+                    <Code2 className="h-4 w-4" />
+                    <span className="text-sm">Code Assistant</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveMode('email')}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-all ${
+                      activeMode === 'email'
+                        ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30'
+                        : 'text-gray-300 hover:bg-purple-600/10 hover:text-white'
+                    }`}
+                  >
+                    <Mail className="h-4 w-4" />
+                    <span className="text-sm">Generate Email</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveMode('presentation')}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-all ${
+                      activeMode === 'presentation'
+                        ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30'
+                        : 'text-gray-300 hover:bg-purple-600/10 hover:text-white'
+                    }`}
+                  >
+                    <Presentation className="h-4 w-4" />
+                    <span className="text-sm">Create Presentation</span>
+                  </button>
                 </div>
-                {mediaStream && (
+              </div>
+
+              {/* Settings Button at Bottom */}
+              <div className="mt-auto p-4 border-t border-purple-900/30">
+                <button
+                  onClick={() => navigate('/settings')}
+                  className="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-all text-gray-300 hover:bg-purple-600/10 hover:text-white"
+                >
+                  <Settings className="h-4 w-4" />
+                  <span className="text-sm">Settings</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Main Content */}
+            <div className="flex-1 backdrop-blur-lg bg-gradient-to-b from-black/40 to-[#0a0a0f]/90 rounded-2xl overflow-hidden flex flex-col md:flex-row min-h-0 border border-purple-900/30 relative">
+              
+              {/* Screen Share Panel */}
+              {isScreenSharing && screenAnalysis && (
+                <div className="w-full md:w-80 bg-[#1a1a1f] border-r border-purple-900/30 flex flex-col">
+                  <ScreenDataDisplay 
+                    data={screenAnalysis} 
+                    isLive={isScreenSharing}
+                    onRefresh={handleRefreshScreenCapture}
+                  />
+                </div>
+              )}
+
+              {/* Chat Area */}
+              <div className="flex-1 flex flex-col min-h-0">
+                {messages.length === 0 && activeMode === 'code' ? (
+                  <div className="flex-1 flex items-center justify-center p-6">
+                    <CodeAssistModeSelector
+                      currentMode={codeAssistMode}
+                      onModeSelect={handleModeSelect}
+                      startScreenShare={startScreenShare}
+                      startVoiceMode={startVoiceMode}
+                    />
+                  </div>
+                ) : (
                   <>
-                    <video
-                      ref={(video) => {
-                        if (video && mediaStream) video.srcObject = mediaStream;
-                      }}
-                      autoPlay
-                      className="w-full h-full object-cover opacity-90"
-                    />
-                    <ImageProcessor
-                      ref={imageProcessorRef}
-                      mediaStream={mediaStream}
-                      onAnalysisComplete={handleAnalysisComplete}
-                    />
-                    <div className="absolute bottom-2 left-2 bg-[#202124]/80 px-2 py-1 rounded text-xs text-[#ffffff99]">
-                      {screenAnalysis?.frameRate || "30 fps"}
+                    <div className={`flex-1 overflow-y-auto p-4 ${styles.chatScroll}`}>
+                      {messages.map(renderMessage)}
+                      {isLoading && (
+                        <div className="flex justify-start mb-4">
+                          <div className="bg-[#2A2B2D] rounded-2xl px-4 py-3 border border-[#ffffff0f]">
+                            <LoadingDots />
+                          </div>
+                        </div>
+                      )}
+                      <div ref={messagesEndRef} />
+                    </div>
+
+                    <div className="border-t border-purple-900/30 p-4">
+                      <form onSubmit={handleSubmit} className="flex gap-3">
+                        <input
+                          type="text"
+                          value={inputValue}
+                          onChange={(e) => setInputValue(e.target.value)}
+                          placeholder={
+                            activeMode === 'code' 
+                              ? "Ask about your code or request assistance..."
+                              : activeMode === 'email'
+                              ? "Describe the email you want to generate..."
+                              : "Describe the presentation you want to create..."
+                          }
+                          className="flex-1 bg-[#2A2B2D] border border-[#ffffff0f] rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500/40"
+                          disabled={isLoading}
+                        />
+                        <button
+                          type="submit"
+                          disabled={isLoading || !inputValue.trim()}
+                          className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg transition-all duration-200 flex items-center gap-2"
+                        >
+                          <Send className="h-4 w-4" />
+                        </button>
+                      </form>
                     </div>
                   </>
                 )}
-                <button
-                  onClick={stopScreenShare}
-                  className="absolute top-2 right-2 p-2 rounded-lg bg-red-500/80 hover:bg-red-600 text-white"
-                >
-                  <X className="h-4 w-4" />
-                </button>
               </div>
-
-              {/* Use ScreenDataDisplay component */}
-              <ScreenDataDisplay
-                data={screenAnalysis || {}}
-                isLive={isScreenSharing}
-                onUseAsPrompt={handleUseAsPrompt}
-                onRefresh={async () => {
-                  if (imageProcessorRef.current) {
-                    const newAnalysis =
-                      await imageProcessorRef.current.processFrameManually();
-                    setScreenAnalysis(newAnalysis);
-                  }
-                }}
-              />
             </div>
-          )}
-          {codeAssistMode === "voice" && (
+          </div>
+        </main>
+
+        {/* Voice Mode Controls */}
+        {isVoiceMode && (
+          <div className="fixed bottom-4 right-4 flex items-center space-x-4 z-50">
             <VoiceMode
-              isActive={isVoiceModeActive}
-              onSpeechResult={(text) => {
-                if (text.trim()) {
-                  // Append new message instead of replacing
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      type: "user",
-                      content: text,
-                      id: `speech-${Date.now()}`, // Unique ID for each message
-                    },
-                  ]);
-                  setHasStartedChat(true);
-                }
-              }}
-              onResponse={(response) => {
-                // Append new bot message instead of replacing
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    type: "bot",
-                    content: response,
-                    id: `ai-response-${Date.now()}`, // Unique ID for each response
-                  },
-                ]);
-              }}
+              isActive={isVoiceMode}
+              onSpeechResult={handleSpeechResult}
+              onResponse={handleVoiceResponse}
             />
-          )}
-        </div>
-      </main>
-      <AlertDialog
-        open={showAlert}
-        title="Stop Screen Sharing"
-        message="Switching features will stop screen sharing. Do you want to continue?"
-        onConfirm={handleAlertConfirm}
-        onCancel={handleAlertCancel}
-      />
-      <Snackbar
-        open={showError}
-        autoHideDuration={6000}
-        onClose={() => setShowError(false)}
-        anchorOrigin={{ vertical: "top", horizontal: "right" }}
-      >
-        <Alert
-          onClose={() => setShowError(false)}
-          severity="error"
-          sx={{
-            bgcolor: "#2A2B2D",
-            color: "#fff",
-            "& .MuiAlert-icon": { color: "#ef4444" },
-          }}
-        >
-          {errorMessage}
-        </Alert>
-      </Snackbar>
-      <VoiceAssistant
-        isActive={voiceAssistantActive}
-        message={currentVoiceMessage}
-        onComplete={() => setCurrentVoiceMessage("")}
-        voiceConfig={voiceConfig}
-      />
-    </div>
+            <button
+              onClick={handleVoiceModeToggle}
+              className="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all"
+            >
+              <MicOff className="h-5 w-5" />
+            </button>
+          </div>
+        )}
+
+        {/* Voice Assistant */}
+        <VoiceAssistant
+          isActive={isSpeaking}
+          message=""
+          onComplete={() => setIsSpeaking(false)}
+        />
+
+        {/* Image Processor */}
+        <ImageProcessor
+          ref={imageProcessorRef}
+          mediaStream={mediaStream}
+          onAnalysisComplete={handleScreenAnalysis}
+        />
+
+        {/* API Key Prompt */}
+        {showApiKeyPrompt && (
+          <ApiKeyPrompt onClose={() => setShowApiKeyPrompt(false)} />
+        )}
+
+        {/* Stop Voice Mode Dialog */}
+        <AlertDialog
+          open={showStopDialog}
+          title="Stop Voice Mode"
+          message="Are you sure you want to stop voice mode?"
+          onConfirm={confirmStopVoiceMode}
+          onCancel={() => setShowStopDialog(false)}
+        />
+      </div>
+    </>
   );
 };
 
