@@ -1,13 +1,22 @@
 import { Groq } from 'groq-sdk';
-import { config } from '../config/env';
+import { getApiKeys } from './apiKeyManager';
 
-const groq = new Groq({ 
-  apiKey: config.groqApiKey,
-  dangerouslyAllowBrowser: true 
-});
+const getGroqClient = () => {
+  const { groqApiKey } = getApiKeys();
+  if (!groqApiKey) {
+    throw new Error('GROQ API key not configured. Please set up your API keys in settings.');
+  }
+  
+  return new Groq({ 
+    apiKey: groqApiKey,
+    dangerouslyAllowBrowser: true 
+  });
+};
 
 export const rephraseLowQualityText = async (text: string): Promise<string> => {
   try {
+    const groq = getGroqClient();
+
     const response = await groq.chat.completions.create({
       messages: [
         {
@@ -34,8 +43,11 @@ export const rephraseLowQualityText = async (text: string): Promise<string> => {
     });
 
     return response.choices[0].message.content ?? '';
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error rephrasing text:', error);
+    if (error.message.includes('API key not configured')) {
+      return 'Please configure your GROQ API key in settings to use this feature.';
+    }
     return text; 
   }
 };

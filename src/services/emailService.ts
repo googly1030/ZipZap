@@ -1,13 +1,20 @@
 import { Groq } from 'groq-sdk';
-import { config } from '../config/env';
+import { getApiKeys } from '../utils/apiKeyManager';
 import { EmailMetadata, EmailModification, EmailResponse } from '../types/emailTypes';
 
-const client = new Groq({ 
-  apiKey: config.groqApiKey,
-  dangerouslyAllowBrowser: true 
-});
-
 let activeRequest: AbortController | null = null;
+
+const getGroqClient = () => {
+  const { groqApiKey } = getApiKeys();
+  if (!groqApiKey) {
+    throw new Error('GROQ API key not configured. Please set up your API keys in settings.');
+  }
+  
+  return new Groq({ 
+    apiKey: groqApiKey,
+    dangerouslyAllowBrowser: true 
+  });
+};
 
 export const generateEmail = async (
   topic: string,
@@ -22,6 +29,8 @@ export const generateEmail = async (
   const signal = activeRequest.signal;
 
   try {
+    const client = getGroqClient();
+
     const processResponse = (response: string): EmailResponse => {
       // Get only the last email format if multiple exist
       const lastEmailIndex = response.toLowerCase().lastIndexOf('subject:');
@@ -91,9 +100,12 @@ Email: ${metadata.sender.email}` : ''}`;
 
     return processResponse(response);
 
-  } catch (error) {
+  } catch (error: any) {
     if (signal.aborted) {
       throw new Error('Request cancelled');
+    }
+    if (error.message.includes('API key not configured')) {
+      throw error;
     }
     throw error;
   } finally {

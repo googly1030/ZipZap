@@ -1,14 +1,21 @@
 import { Groq } from 'groq-sdk';
-import { config } from '../config/env';
+import { getApiKeys } from '../utils/apiKeyManager';
 import { captureAndAnalyzeScreen } from '../utils/screenCapture';
 import { CodeSnippet, CodeAssistanceResponse, CodeContext } from '../types/codeTypes';
 
-const client = new Groq({ 
-  apiKey: config.groqApiKey,
-  dangerouslyAllowBrowser: true 
-});
-
 let activeRequest: AbortController | null = null;
+
+const getGroqClient = () => {
+  const { groqApiKey } = getApiKeys();
+  if (!groqApiKey) {
+    throw new Error('GROQ API key not configured. Please set up your API keys in settings.');
+  }
+  
+  return new Groq({ 
+    apiKey: groqApiKey,
+    dangerouslyAllowBrowser: true 
+  });
+};
 
 interface PresentationModification {
   originalContent: string;
@@ -29,6 +36,8 @@ export const generatePresentation = async (
   const signal = activeRequest.signal;
 
   try {
+    const client = getGroqClient();
+
     const audiencePrompts = {
       students: `Create an educational and engaging ${documentType} for students about: ${topic}.
         Focus on clear explanations, examples, and learning objectives.
@@ -49,14 +58,15 @@ export const generatePresentation = async (
 
     const basePrompt = modification ? 
       `Modify the existing presentation according to these changes: "${modification.modificationRequest}"
-      Original presentation:
-      ${modification.originalContent}
-      
-      Important guidelines:
-      1. Keep the modifications focused and relevant
-      2. Maintain existing structure where appropriate
-      3. Update content based on the modification request
-      4. Target content specifically for ${audience}` :
+       
+       Previous presentation:
+       ${modification.originalContent}
+       
+       Important guidelines:
+       1. Keep the modifications focused and relevant
+       2. Maintain existing structure where appropriate
+       3. Update content based on the modification request
+       4. Target content specifically for ${audience}` :
       audiencePrompts[audience as keyof typeof audiencePrompts] || 
       `Create a ${documentType} presentation about: ${topic}`;
 
@@ -111,9 +121,12 @@ export const generatePresentation = async (
       console.error('Parse error:', parseError);
       throw new Error('Failed to parse presentation content');
     }
-  } catch {
+  } catch (error: any) {
     if (signal.aborted) {
       throw new Error('Request cancelled');
+    }
+    if (error.message.includes('API key not configured')) {
+      throw error;
     }
     throw new Error('An error occurred');
   } finally {
@@ -215,6 +228,8 @@ export const generateCodeAssistance = async (
   const signal = activeRequest.signal;
 
   try {
+    const client = getGroqClient();
+
     let screenContent = '';
     if (isScreenSharing && mediaStream) {
       screenContent = await captureAndAnalyzeScreen(mediaStream);
@@ -298,9 +313,12 @@ export const generateCodeAssistance = async (
 
     return formattedResponse;
 
-  } catch (error) {
+  } catch (error: any) {
     if (signal.aborted) {
       throw new Error('Request cancelled');
+    }
+    if (error.message.includes('API key not configured')) {
+      throw error;
     }
     throw error;
   } finally {

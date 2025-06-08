@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import LandingPage from './components/LandingPage';
 import UserForm from './components/UserForm';
 import ChatInterface from './components/ChatInterface';
+import SettingsPage from './components/SettingsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -43,6 +44,14 @@ function App() {
           element={
             <ProtectedRoute isAuthenticated={Boolean(userInfo.name)}>
               <ChatInterface userInfo={userInfo} />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/settings" 
+          element={
+            <ProtectedRoute isAuthenticated={Boolean(userInfo.name)}>
+              <SettingsPage />
             </ProtectedRoute>
           } 
         />
